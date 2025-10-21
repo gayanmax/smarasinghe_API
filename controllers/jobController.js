@@ -391,3 +391,43 @@ exports.getAllJobsByOrderStatus = (req, res) => {
 };
 
 
+// ✅ Get all jobs for a specific customer (job table only)
+exports.getJobsByCustomer = (req, res) => {
+    const { cus_id } = req.params;
+
+    if (!cus_id) {
+        return res.status(404).json({ message: "Customer ID not found" });
+    }
+
+    const sql = `
+        SELECT 
+            job_id,
+            cus_id,
+            job_status,
+            prescribed_By_Id,
+            seg_h,        
+            due_date,
+            order_status,
+            create_date,
+            frame_price,
+            lense_price,
+            price,
+            discount,
+            netPrice
+        FROM job
+        WHERE cus_id = ?
+        ORDER BY create_date DESC`;
+
+    db.query(sql, [cus_id], (err, result) => {
+        if (err) {
+            console.error("Job lookup failed:", err);
+            return res.status(500).json({ message: "Job lookup failed" });
+        }
+
+        if (result.length === 0) {
+            return res.status(404).json({ message: "No jobs found for this customer" });
+        }
+
+        res.status(200).json(result);
+    });
+};
