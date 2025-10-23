@@ -415,6 +415,7 @@ exports.getJobsByCustomer = (req, res) => {
             create_date,
             frame_price,
             lense_price,
+            due_amount,
             price,
             discount,
             netPrice
