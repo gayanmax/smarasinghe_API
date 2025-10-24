@@ -18,7 +18,7 @@ exports.getFrameCategory = (req, res) => {
             return res.status(500).json({  message: 'Database error' });
         }
 
-        res.status(200).json({  data: rows });
+        res.status(200).json(rows);
     });
 };
 
