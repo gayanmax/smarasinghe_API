@@ -39,7 +39,10 @@ router.post('/insert-lens', authMiddleware, lensController.insertData);
 
 router.get('/get-frame-details', authMiddleware, frameController.getFrameCategory);
 router.post('/update-frame-status', authMiddleware, frameController.updateStatus);
-router.post('/insert-frame', authMiddleware, frameController.insertData);
+router.post('/insert-frame-details', authMiddleware, frameController.insertData);
+
+router.post('/insert-frame',  frameController.insertFrame);
+
 
 // prescribedBy APIs
 router.post("/create-prescribed", prescribedByController.createPrescribedBy);
