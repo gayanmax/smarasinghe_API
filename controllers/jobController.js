@@ -1,6 +1,86 @@
 const db = require('../db');
 
 // ✅ Create Job
+// exports.createJob = (req, res) => {
+//     const {
+//         cus_id,
+//         job_status,
+//         r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
+//         l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
+//         pupil_distance, seg_h,
+//         prescribed_By_Id, comment, due_date,
+//         order_status, lens_id, lens_status,
+//         frame_id, frame_status,
+//         frame_price,
+//         lens_name,lens_type,lens_color,lens_size,ordered_by,ordered_date, lense_price, price, discount, netPrice,due_amount
+//     } = req.body;
+//
+//     const created_by = req.user?.user_id; // ✅ logged-in user from JWT
+//
+//
+//
+//     const sql = `
+//     INSERT INTO job (
+//       cus_id, job_status,
+//       r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
+//       l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
+//       pupil_distance, seg_h,
+//       prescribed_By_Id, comment, due_date,
+//       order_status, lens_id, lens_status,
+//       frame_id, frame_status,
+//       frame_price, lense_price, price, discount, netPrice,due_amount,
+//       create_date
+//     ) VALUES (
+//       ?, ?,
+//       ?, ?, ?, ?, ?, ?,
+//       ?, ?, ?, ?, ?, ?,
+//       ?, ?,
+//       ?, ?, ?,
+//       ?, ?, ?,
+//       ?, ?,
+//       ?, ?, ?, ?, ?,?,
+//       NOW()
+//     )
+//   `;
+//
+//     db.query(sql, [
+//         cus_id, job_status,
+//         r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
+//         l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
+//         pupil_distance, seg_h,
+//         prescribed_By_Id, comment, due_date,
+//         order_status, lens_id, lens_status,
+//         frame_id, frame_status,
+//         frame_price, lense_price, price, discount, netPrice,due_amount
+//     ], (err, result) => {
+//         if (err) {
+//             console.error('Job insert failed:', err);
+//             return res.status(500).json({ message: 'Job insert failed' });
+//         }
+//
+//         const jobId = result.insertId;
+//
+//         // ✅ Insert into job_log
+//         const logSql = `
+//       INSERT INTO job_log (job_id, field_name, old_value, new_value, changed_by)
+//       VALUES (?, ?, ?, ?, ?)
+//     `;
+//         const logComment = `Job created for customer`;
+//         db.query(logSql, [jobId, "Create new job", "", logComment, created_by || null], (logErr) => {
+//             if (logErr) {
+//                 console.error("Job log insert failed:", logErr);
+//                 // ⚠️ Don’t block response if log fails
+//             }
+//         });
+//
+//         res.status(201).json({
+//             message: 'Job created successfully',
+//             jobId: result.insertId
+//         });
+//     });
+// };
+
+// ✅ Create Job with lens_orded insert
 exports.createJob = (req, res) => {
     const {
         cus_id,
@@ -9,38 +89,33 @@ exports.createJob = (req, res) => {
         l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
         pupil_distance, seg_h,
         prescribed_By_Id, comment, due_date,
-        order_status, lens_id, lens_status,
+        order_status,
+        lens_id, lens_status,
         frame_id, frame_status,
-        frame_price, lense_price, price, discount, netPrice,due_amount
+        frame_price,
+        lens_category, lens_type, lens_color, lens_size, lens_ordered_by, lens_ordered_date,
+        lense_price, price, discount, netPrice, due_amount
     } = req.body;
 
     const created_by = req.user?.user_id; // ✅ logged-in user from JWT
 
-    const sql = `
-    INSERT INTO job (
-      cus_id, job_status,
-      r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
-      l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
-      pupil_distance, seg_h,
-      prescribed_By_Id, comment, due_date,
-      order_status, lens_id, lens_status,
-      frame_id, frame_status,
-      frame_price, lense_price, price, discount, netPrice,due_amount,
-      create_date
-    ) VALUES (
-      ?, ?,
-      ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?,
-      ?, ?,
-      ?, ?, ?,
-      ?, ?, ?,
-      ?, ?,
-      ?, ?, ?, ?, ?,?,
-      NOW()
-    )
-  `;
+    // 🟢 Step 1: Insert into lens_orded
+    const lensSql = `
+    INSERT INTO lens
+    (lens_category, lens_type, lens_color, lens_size, lens_ordered_by, lens_ordered_date)
+    VALUES (?, ?, ?, ?, ?, ?)`;
 
-    db.query(sql, [
+    db.query(lensSql, [lens_category, lens_type, lens_color, lens_size, lens_ordered_by, lens_ordered_date], (lensErr, lensResult) => {
+        if (lensErr) {
+            console.error("Lens insert failed:", lensErr);
+            return res.status(500).json({ message: "Lens insert failed", error: lensErr });
+        }
+
+        const insertedLensId = lensResult.insertId; // ✅ Get lens ID
+
+        // 🟢 Step 2: Insert into job (using new lens ID)
+        const jobSql = `
+      INSERT INTO job (
         cus_id, job_status,
         r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
         l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
@@ -48,34 +123,62 @@ exports.createJob = (req, res) => {
         prescribed_By_Id, comment, due_date,
         order_status, lens_id, lens_status,
         frame_id, frame_status,
-        frame_price, lense_price, price, discount, netPrice,due_amount
-    ], (err, result) => {
-        if (err) {
-            console.error('Job insert failed:', err);
-            return res.status(500).json({ message: 'Job insert failed' });
-        }
-
-        const jobId = result.insertId;
-
-        // ✅ Insert into job_log
-        const logSql = `
-      INSERT INTO job_log (job_id, field_name, old_value, new_value, changed_by)
-      VALUES (?, ?, ?, ?, ?)
+        frame_price, lense_price, price, discount, netPrice, due_amount,
+        create_date
+      ) VALUES (
+        ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, ?,
+        ?, ?, ?,
+        ?, ?, ?,
+        ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        NOW()
+      )
     `;
-        const logComment = `Job created for customer`;
-        db.query(logSql, [jobId, "Create new job", "", logComment, created_by || null], (logErr) => {
-            if (logErr) {
-                console.error("Job log insert failed:", logErr);
-                // ⚠️ Don’t block response if log fails
-            }
-        });
 
-        res.status(201).json({
-            message: 'Job created successfully',
-            jobId: result.insertId
+        db.query(jobSql, [
+            cus_id, job_status,
+            r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
+            l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
+            pupil_distance, seg_h,
+            prescribed_By_Id, comment, due_date,
+            order_status, insertedLensId, lens_status,
+            frame_id, frame_status,
+            frame_price, lense_price, price, discount, netPrice, due_amount
+        ], (jobErr, jobResult) => {
+            if (jobErr) {
+                console.error("Job insert failed:", jobErr);
+                return res.status(500).json({ message: "Job insert failed", error: jobErr });
+            }
+
+            const jobId = jobResult.insertId;
+
+            // 🟢 Step 3: Insert into job_log
+            const logSql = `
+        INSERT INTO job_log (job_id, field_name, old_value, new_value, changed_by)
+        VALUES (?, ?, ?, ?, ?)
+      `;
+            const logComment = `Job created for customer`;
+
+            db.query(logSql, [jobId, "Create new job", "", logComment, created_by || null], (logErr) => {
+                if (logErr) {
+                    console.error("Job log insert failed:", logErr);
+                    // ⚠️ Don't block response if log fails
+                }
+            });
+
+            // 🟢 Final Response
+            res.status(201).json({
+                message: "Job created successfully",
+                jobId,
+                lens_orded_id: insertedLensId
+            });
         });
     });
 };
+
 
 // ✅ Get Job Details with customer + billing
 exports.getJobDetails = (req, res) => {
@@ -397,7 +500,6 @@ exports.getAllJobsByOrderStatus = (req, res) => {
         });
     });
 };
-
 
 // ✅ Get all jobs for a specific customer (job table only)
 exports.getJobsByCustomer = (req, res) => {

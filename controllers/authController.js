@@ -94,3 +94,20 @@ exports.logout = (req, res) => {
 exports.profile = (req, res) => {
     res.json({ message: 'User profile', user: req.user });
 };
+
+// GET /api/users
+exports.getAllUsers = (req, res) => {
+    const sql = `SELECT user_id, user_name, email, is_admin, last_login_time, create_date FROM users`;
+
+    db.query(sql, (err, result) => {
+        if (err) {
+            console.error("Error fetching users:", err);
+            return res.status(500).json({ message: "Database error", error: err });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    });
+};
