@@ -135,30 +135,6 @@ exports.insertFrame = (req, res) => {
     });
 };
 
-// exports.getActiveFrames = (req, res) => {
-//     const sql = `
-//         SELECT frame_id
-//         FROM frame
-//         WHERE status = 1
-//     `;
-//
-//     db.query(sql, (err, result) => {
-//         if (err) {
-//             console.error("Error fetching frames:", err);
-//             return res.status(500).json({ message: "Database error", error: err });
-//         }
-//
-//         if (result.length === 0) {
-//             return res.status(404).json({ message: "No active frames found" });
-//         }
-//
-//         return res.status(200).json({
-//             success: true,
-//             data: result
-//         });
-//     });
-// };
-
 
 exports.getActiveFrames = (req, res) => {
     const sql = `SELECT frame_id FROM frame WHERE status = 1`;
