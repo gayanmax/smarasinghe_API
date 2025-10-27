@@ -137,7 +137,7 @@ exports.insertFrame = (req, res) => {
 
 
 exports.getActiveFrames = (req, res) => {
-    const sql = `SELECT frame_id FROM frame WHERE status = 1`;
+    const sql = `SELECT id,frame_id FROM frame WHERE status = 1`;
 
     db.query(sql, (err, result) => {
         if (err) {
@@ -145,9 +145,10 @@ exports.getActiveFrames = (req, res) => {
             return res.status(500).json({ message: "Database error", error: err });
         }
 
-        return res.status(200).json({
-            success: true,
-            frame_ids: result.map(row => row.frame_id)
-        });
+        res.status(200).json(result);
+        // return res.status(200).json({
+        //     success: true,
+        //     frame_ids: result.map(row => row.frame_id)
+        // });
     });
 };
