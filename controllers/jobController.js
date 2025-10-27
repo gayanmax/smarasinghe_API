@@ -116,6 +116,7 @@ exports.getJobDetails = (req, res) => {
         bill_id,
         amount,
         bill_type,
+        payment_method,
         bill_date,
         billed_by
       FROM billing
@@ -147,6 +148,8 @@ exports.getJobDetails = (req, res) => {
                 l_va: job.l_va,
                 l_iol: job.l_iol,
                 l_add: job.l_add,
+                lens_status:job.lens_status,
+                frame_status:job.frame_status,
                 pupil_distance: job.pupil_distance,
                 prescribed_By_Id: job.prescribed_By_Id,
                 seg_h: job.seg_h,
@@ -174,6 +177,7 @@ exports.getJobDetails = (req, res) => {
                     bill_id: b.bill_id,
                     amount: b.amount,
                     bill_type: b.bill_type,
+                    bill_method:b.payment_method,
                     bill_date: b.bill_date,
                     billed_by: b.billed_by
                 }))
@@ -411,6 +415,7 @@ exports.getJobsByCustomer = (req, res) => {
             create_date,
             frame_price,
             lense_price,
+            due_amount,
             price,
             discount,
             netPrice
