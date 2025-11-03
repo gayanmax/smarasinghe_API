@@ -84,7 +84,6 @@ const db = require('../db');
 exports.createJob = (req, res) => {
     const {
         cus_id,
-        job_status,
         r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
         l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
         pupil_distance, seg_h,
@@ -116,7 +115,7 @@ exports.createJob = (req, res) => {
         // 🟢 Step 2: Insert into job (using new lens ID)
         const jobSql = `
       INSERT INTO job (
-        cus_id, job_status,
+        cus_id,
         r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
         l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
         pupil_distance, seg_h,
@@ -126,7 +125,7 @@ exports.createJob = (req, res) => {
         frame_price, lense_price, price, discount, netPrice, due_amount,
         create_date
       ) VALUES (
-        ?, ?,
+        ?,
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
         ?, ?,
@@ -139,7 +138,7 @@ exports.createJob = (req, res) => {
     `;
 
         db.query(jobSql, [
-            cus_id, job_status,
+            cus_id,
             r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
             l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
             pupil_distance, seg_h,
@@ -238,7 +237,6 @@ exports.getJobDetails = (req, res) => {
 
             res.status(200).json({
                 job_id: job.job_id,
-                job_status: job.job_status,
                 r_sph: job.r_sph,
                 r_cyl: job.r_cyl,
                 r_axis: job.r_axis,
@@ -402,7 +400,7 @@ exports.getAllJobsByOrderStatus = (req, res) => {
         SELECT
           j.job_id,
           j.order_status,
-          j.job_status,
+     
           j.lens_status,
           j.frame_status,
           j.netPrice,
@@ -474,7 +472,7 @@ exports.getAllJobsByOrderStatus = (req, res) => {
             const jobs = result.map(job => ({
                 job_id: job.job_id,
                 order_status: job.order_status,
-                job_status: job.job_status,
+
                 lens_status:job.lens_status,
                 frame_status:job.frame_status,
                 comment: job.comment,
@@ -513,14 +511,15 @@ exports.getJobsByCustomer = (req, res) => {
         SELECT 
             job_id,
             cus_id,
-            job_status,
             prescribed_By_Id,
             seg_h,        
             due_date,
             order_status,
             create_date,
             frame_price,
+            frame_status,
             lense_price,
+            lens_status,
             due_amount,
             price,
             discount,

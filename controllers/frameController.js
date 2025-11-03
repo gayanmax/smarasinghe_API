@@ -135,7 +135,6 @@ exports.insertFrame = (req, res) => {
     });
 };
 
-
 exports.getActiveFrames = (req, res) => {
     const sql = `SELECT id,frame_id FROM frame WHERE status = 1`;
 

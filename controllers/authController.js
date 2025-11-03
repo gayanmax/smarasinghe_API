@@ -97,7 +97,8 @@ exports.profile = (req, res) => {
 
 // GET /api/users
 exports.getAllUsers = (req, res) => {
-    const sql = `SELECT user_id, user_name, email, is_admin, last_login_time, create_date FROM users`;
+    // const sql = `SELECT user_id, user_name, email, is_admin, last_login_time, create_date FROM users`;
+    const sql = `SELECT * FROM users`;
 
     db.query(sql, (err, result) => {
         if (err) {
@@ -107,7 +108,7 @@ exports.getAllUsers = (req, res) => {
 
         res.status(200).json({
             success: true,
-            data: result
+            result,
         });
     });
 };

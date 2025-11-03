@@ -75,7 +75,7 @@ exports.insertData = (req, res) => {
 //lens ordered company APIs
 
 exports.getAllLensOrders = (req, res) => {
-    const sql = `SELECT id, order_company_name FROM lens_orded WHERE is_active = 1`;
+    const sql = `SELECT id, order_company_name, Telephone FROM lens_orded WHERE is_active = 1`;
 
     db.query(sql, (err, result) => {
         if (err) {
@@ -83,10 +83,11 @@ exports.getAllLensOrders = (req, res) => {
             return res.status(500).json({ message: "Database error", error: err });
         }
 
-        res.status(200).json({
-            success: true,
-            data: result
-        });
+        res.status(200).json(result);
+        // res.status(200).json({
+        //     success: true,
+        //     data: result
+        // });
     });
 };
 
