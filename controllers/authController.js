@@ -49,9 +49,9 @@ exports.register = async (req, res) => {
 
 
 exports.login = (req, res) => {
-    const {email, password} = req.body;
-
-    db.query('SELECT * FROM users WHERE email = ?', [email], async (err, results) => {
+    const {user_name, password} = req.body;
+    // console.log(email,password)
+    db.query('SELECT * FROM users WHERE user_name = ?', [user_name], async (err, results) => {
         if (err || results.length === 0) return res.status(401).json({message: 'Invalid credentials'});
 
         const user = results[0];
