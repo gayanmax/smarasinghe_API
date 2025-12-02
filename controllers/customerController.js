@@ -175,3 +175,75 @@ exports.getCustomers = (req, res) => {
         });
     });
 };
+
+// customer search
+exports.customerSearch = (req, res) => {
+    const q = req.query.q;
+
+    if (!q || q.trim().length < 2) {
+        return res.json({ data: [] });
+    }
+
+    const sql = `
+        SELECT cus_id, MIN(text) AS text
+        FROM (
+            SELECT cus_id, name AS text, 1 AS priority
+            FROM customers 
+            WHERE name LIKE CONCAT('%', ?, '%')
+
+            UNION ALL
+
+            SELECT cus_id, mobile AS text, 2 AS priority
+            FROM customers 
+            WHERE mobile LIKE CONCAT('%', ?, '%')
+
+            UNION ALL
+
+            SELECT cus_id, nic AS text, 3 AS priority
+            FROM customers 
+            WHERE nic LIKE CONCAT('%', ?, '%')
+
+            UNION ALL
+
+            SELECT cus_id, address AS text, 4 AS priority
+            FROM customers 
+            WHERE address LIKE CONCAT('%', ?, '%')
+        ) AS matches
+        GROUP BY cus_id
+        ORDER BY MIN(priority)
+        LIMIT 10
+    `;
+
+    db.query(sql, [q, q, q, q], (err, results) => {
+        if (err) {
+            console.error("Customer search error:", err);
+            return res.status(500).json({ error: "Server Error" });
+        }
+
+        res.status(200).json(results);
+    });
+};
+
+// get customer by Id
+exports.getCustomerById = (req, res) => {
+    const { id } = req.params;
+
+    // console.log("frame id :",id)
+    if (!id) {
+        return res.status(400).json({ message: "ID is required" });
+    }
+    const sql = `SELECT * FROM customers WHERE cus_id = ?`;
+
+    db.query(sql, [id], (err, result) => {
+        if (err) {
+            console.error("Fetch by ID failed:", err);
+            return res.status(500).json({ message: "Fetch by ID failed" });
+        }
+
+        if (result.length === 0) {
+            return res.status(404).json({ message: "customer not found" });
+        }
+
+        res.status(200).json(result[0]);
+    });
+};

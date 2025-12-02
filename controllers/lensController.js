@@ -72,6 +72,26 @@ exports.insertData = (req, res) => {
     });
 };
 
+exports.getLensNames = async (req, res) => {
+    const lensFields = req.body;
+
+    // console.log("lensFields :",lensFields)
+    try {
+        const promises = Object.entries(lensFields).map(async ([table, id]) => {
+            const [rows] = await db.promise().query(
+                `SELECT name FROM ?? WHERE id = ?`, [table, id]
+            );
+            return { [table]: rows[0]?.name || null };
+        });
+
+        const results = await Promise.all(promises);
+        const response = Object.assign({}, ...results);
+        res.json(response);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch lens names" });
+    }
+};
+
 //lens ordered company APIs
 
 exports.getAllLensOrders = (req, res) => {
@@ -88,6 +108,31 @@ exports.getAllLensOrders = (req, res) => {
         //     success: true,
         //     data: result
         // });
+    });
+};
+
+exports.getOrderById = (req, res) => {
+    const { id } = req.params;
+
+    // console.log("supplier id :",id)
+
+    if (!id) {
+        return res.status(400).json({ message: "ID is required" });
+    }
+
+    const sql = `SELECT order_company_name, Telephone FROM lens_orded WHERE id = ?`;
+
+    db.query(sql, [id], (err, result) => {
+        if (err) {
+            console.error("Fetch by ID failed:", err);
+            return res.status(500).json({ message: "Fetch by ID failed" });
+        }
+
+        if (result.length === 0) {
+            return res.status(404).json({ message: "Frame not found" });
+        }
+
+        res.status(200).json(result[0]);
     });
 };
 

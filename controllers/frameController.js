@@ -22,8 +22,32 @@ exports.getFrameCategory = (req, res) => {
     });
 };
 
+exports.getFrameById = (req, res) => {
+    const { id } = req.params;
+
+    // console.log("frame id :",id)
+    if (!id) {
+        return res.status(400).json({ message: "ID is required" });
+    }
+
+    const sql = `SELECT frame_id FROM frame WHERE id = ?`;
+
+    db.query(sql, [id], (err, result) => {
+        if (err) {
+            console.error("Fetch by ID failed:", err);
+            return res.status(500).json({ message: "Fetch by ID failed" });
+        }
+
+        if (result.length === 0) {
+            return res.status(404).json({ message: "Frame not found" });
+        }
+
+        res.status(200).json(result[0]);
+    });
+};
+
 exports.updateStatus = (req, res) => {
-    const {table_name, id} = req.body; // table name + row id from request body
+    const {table_name, id} = req.body;
 
     // ✅ Whitelist tables to prevent SQL injection
     const allowedTables = ['frame_brand', 'frame_category', 'frame_color', 'frame_size', 'frame_type'];

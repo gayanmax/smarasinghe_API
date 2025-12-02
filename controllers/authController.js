@@ -112,3 +112,40 @@ exports.getAllUsers = (req, res) => {
         });
     });
 };
+
+// delete user
+exports.removeUser = (req, res) => {
+    const { id } = req.params;
+
+    if (!id) {
+        return res.status(400).json({
+            success: false,
+            message: "User ID is required"
+        });
+    }
+
+    const sql = `DELETE FROM users WHERE user_id = ?`;
+
+    db.query(sql, [id], (err, result) => {
+        if (err) {
+            console.error("Error deleting user:", err);
+            return res.status(500).json({
+                success: false,
+                message: "Database error",
+                error: err,
+            });
+        }
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "User deleted successfully",
+        });
+    });
+};
