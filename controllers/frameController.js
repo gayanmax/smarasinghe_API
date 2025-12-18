@@ -22,6 +22,55 @@ exports.getFrameCategory = (req, res) => {
     });
 };
 
+exports.getAllFrameDetails = (req, res) => {
+
+    const queries = {
+        brand: 'SELECT id, name FROM frame_brand WHERE status = 1',
+        category: 'SELECT id, name FROM frame_category WHERE status = 1',
+        color: 'SELECT id, name FROM frame_color WHERE status = 1',
+        size: 'SELECT id, name FROM frame_size WHERE status = 1',
+        type: 'SELECT id, name FROM frame_type WHERE status = 1'
+    };
+
+    const result = {};
+
+    const keys = Object.keys(queries);
+    let completed = 0;
+
+    keys.forEach(key => {
+        db.query(queries[key], (err, rows) => {
+            if (err) {
+                console.error(err);
+                return res.status(500).json({ message: 'Database error' });
+            }
+
+            result[key] = rows;
+            completed++;
+
+            if (completed === keys.length) {
+                res.status(200).json(result);
+            }
+        });
+    });
+};
+
+exports.getAllFrameKeys = (req, res) => {
+    const sql = `SELECT id, frame_id, status FROM frame`;
+
+    db.query(sql, (err, result) => {
+        if (err) {
+            console.error("Fetching frame keys failed:", err);
+            return res.status(500).json({ message: "Fetching frame keys failed" });
+        }
+
+        if (!result || result.length === 0) {
+            return res.status(404).json({ message: "Frames not found" });
+        }
+
+        return res.status(200).json(result);
+    });
+};
+
 exports.getFrameById = (req, res) => {
     const { id } = req.params;
 
@@ -43,6 +92,40 @@ exports.getFrameById = (req, res) => {
         }
 
         res.status(200).json(result[0]);
+    });
+};
+
+exports.updateFrameStatus = (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    // Basic validation
+    if (id === undefined || status === undefined) {
+        return res.status(400).json({ message: "Frame id and status are required" });
+    }
+
+    // Enforce allowed values
+    if (![0, 1].includes(Number(status))) {
+        return res.status(400).json({ message: "Status must be 0 or 1" });
+    }
+
+    const sql = `UPDATE frame SET status = ? WHERE id = ?`;
+
+    db.query(sql, [status, id], (err, result) => {
+        if (err) {
+            console.error("Updating frame status failed:", err);
+            return res.status(500).json({ message: "Updating frame status failed" });
+        }
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: "Frame not found" });
+        }
+
+        return res.status(200).json({
+            message: "Frame status updated successfully",
+            id,
+            status
+        });
     });
 };
 

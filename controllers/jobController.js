@@ -155,7 +155,7 @@ exports.createJob = (req, res) => {
             const jobId = jobResult.insertId;
 
             // 🟢 Step 3: Insert into job_log
-            const logSql = `
+        const logSql = `
         INSERT INTO job_log (job_id, field_name, old_value, new_value, changed_by)
         VALUES (?, ?, ?, ?, ?)
       `;
@@ -223,6 +223,7 @@ exports.getJobDetails = (req, res) => {
                 billed_by
             FROM billing
             WHERE job_id = ?
+            AND bill_type <> 'claim'
             ORDER BY bill_date ASC
         `;
 
@@ -365,13 +366,32 @@ exports.updateJob = (req, res) => {
 
             // Step 3: Insert logs for changed fields
             const logSql = `
-        INSERT INTO job_log (job_id, field_name, old_value, new_value, changed_by)
-        VALUES (?, ?, ?, ?, ?)
-      `;
+                INSERT INTO job_log (job_id, field_name, old_value, new_value, changed_by)
+                VALUES (?, ?, ?, ?, ?)
+            `;
 
             fields.forEach(field => {
-                if (oldJob[field] != updates[field]) {
-                    db.query(logSql, [job_id, field, String(oldJob[field] ?? ""), String(updates[field] ?? ""), changed_by]);
+                const oldVal = oldJob[field];
+                const newVal = updates[field];
+
+                if (oldVal != newVal) {
+                    const fieldMessage = `${field} updated!`; // ✅ UPDATED FIELD NAME
+
+                    db.query(
+                        logSql,
+                        [
+                            job_id,
+                            fieldMessage,           // <- now uses "field updated!"
+                            String(oldVal ?? ""),
+                            String(newVal ?? ""),
+                            changed_by
+                        ],
+                        (logErr) => {
+                            if (logErr) {
+                                console.error("Job log insert failed:", logErr);
+                            }
+                        }
+                    );
                 }
             });
 
@@ -635,6 +655,7 @@ exports.getFullJobDetails = (req, res) => {
                 SELECT bill_id, amount, bill_type, payment_method, bill_date, billed_by
                 FROM billing
                 WHERE job_id = ?
+                AND bill_type <> 'claim'
                 ORDER BY bill_date ASC
             `;
             const billingRows = await query(billingSql, [job_id]);
@@ -799,4 +820,195 @@ exports.getFullJobDetails = (req, res) => {
         }
     })();
 };
+
+// add claimer
+exports.addClaimerToJob = (req, res) => {
+    const {
+        mode,
+        jobId,
+        claimerId,
+        name,
+        email,
+        mobile,
+        lan_number,
+        address,
+        nic,
+        age,
+        claim_status,
+        claim_fprice,
+        claim_lprice
+    } = req.body;
+
+    if (!mode || !jobId) {
+        return res.status(400).json({
+            success: false,
+            message: "Mode and jobId are required."
+        });
+    }
+
+    const billed_by = req.user?.user_id || null;
+
+    // amount = fprice + lprice
+    const amount = (Number(claim_fprice) || 0) + (Number(claim_lprice) || 0);
+
+    // Helper: Create billing entry after job update
+    const createBilling = (claimer_id_to_return) => {
+        const insertBill = `
+            INSERT INTO billing 
+            (job_id, amount, payment_method, bill_type, bill_date, payment_status, billed_by)
+            VALUES (?, ?, 'cash', 'claim', NOW(), 1, ?)
+        `;
+
+        db.query(insertBill, [jobId, amount, billed_by], (err2, billResult) => {
+            if (err2) {
+                console.error("Billing insert failed:", err2);
+                return res.status(500).json({
+                    success: false,
+                    message: "Failed to create billing."
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: "Claimer updated & bill created successfully.",
+                claimer_id: claimer_id_to_return,
+                billId: billResult.insertId
+            });
+        });
+    };
+
+    // -----------------------------------------------------------
+    // MODE: NEW — insert customer then update job
+    // -----------------------------------------------------------
+    if (mode === "new") {
+        const insertCustomer = `
+            INSERT INTO customers
+            (name, email, mobile, lan_number, address, nic, age, create_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+        `;
+
+        db.query(
+            insertCustomer,
+            [name, email, mobile, lan_number, address, nic, age],
+            (err, customerResult) => {
+                if (err) {
+                    console.error("Customer insert failed:", err);
+                    return res.status(500).json({
+                        success: false,
+                        message: "Failed to create customer."
+                    });
+                }
+
+                const newClaimerId = customerResult.insertId;
+
+                const updateJob = `
+                    UPDATE job
+                    SET 
+                        claim_id = ?, 
+                        claim_status = ?, 
+                        claim_fprice = ?, 
+                        claim_lprice = ?, 
+                        claim_date = NOW()
+                    WHERE job_id = ?
+                `;
+
+                db.query(
+                    updateJob,
+                    [newClaimerId, claim_status, claim_fprice, claim_lprice, jobId],
+                    (err2) => {
+                        if (err2) {
+                            console.error("Job update failed:", err2);
+                            return res.status(500).json({
+                                success: false,
+                                message: "Failed to update job."
+                            });
+                        }
+
+                        // -------------------------------------------------
+                        // LOG ENTRY FOR CLAIM ADD (mode: new)
+                        // -------------------------------------------------
+                        const logSql = `
+                            INSERT INTO job_log (job_id, field_name, old_value, new_value, changed_by)
+                            VALUES (?, ?, ?, ?, ?)
+                        `;
+
+                        const logComment = `Claim added for job`;
+
+                        db.query(
+                            logSql,
+                            [jobId, "Claim add", "", logComment, billed_by],
+                            (logErr) => {
+                                if (logErr) {
+                                    console.error("Claim log insert failed:", logErr);
+                                }
+                            }
+                        );
+                        // -------------------------------------------------
+
+                        return createBilling(newClaimerId);
+                    }
+                );
+            }
+        );
+
+        return;
+    }
+
+    // -----------------------------------------------------------
+    // MODE: EXISTING — only update job
+    // -----------------------------------------------------------
+    if (mode === "existing") {
+        const updateJob = `
+            UPDATE job
+            SET 
+                claim_id = ?, 
+                claim_status = ?, 
+                claim_fprice = ?, 
+                claim_lprice = ?, 
+                claim_date = NOW()
+            WHERE job_id = ?
+        `;
+
+        db.query(
+            updateJob,
+            [claimerId, claim_status, claim_fprice, claim_lprice, jobId],
+            (err) => {
+                if (err) {
+                    console.error("Job update failed:", err);
+                    return res.status(500).json({
+                        success: false,
+                        message: "Failed to update job."
+                    });
+                }
+
+                // -------------------------------------------------
+                // LOG ENTRY FOR CLAIM ADD (mode: existing)
+                // -------------------------------------------------
+                const logSql = `
+                    INSERT INTO job_log (job_id, field_name, old_value, new_value, changed_by)
+                    VALUES (?, ?, ?, ?, ?)
+                `;
+
+                const logComment = `Claim added for job`;
+
+                db.query(
+                    logSql,
+                    [jobId, "Claim add", "", logComment, billed_by],
+                    (logErr) => {
+                        if (logErr) {
+                            console.error("Claim log insert failed:", logErr);
+                        }
+                    }
+                );
+                // -------------------------------------------------
+
+                return createBilling(claimerId);
+            }
+        );
+    }
+};
+
+
+
+
 
