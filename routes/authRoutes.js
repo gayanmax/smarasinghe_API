@@ -10,6 +10,7 @@ const prescribedByController = require('../controllers/prescribedByController');
 const lensController = require('../controllers/lensController');
 const searchController = require('../controllers/searchController');
 const dashboardController = require('../controllers/dashboardController')
+const expensesController = require('../controllers/expensesController')
 const authMiddleware = require('../middleware/authMiddleware');
 
 router.post('/register', authController.register);
@@ -37,6 +38,7 @@ router.post('/jobs/add-claimer', authMiddleware, jobController.addClaimerToJob);
 
 router.post('/create-billing', authMiddleware, billController.createBilling);
 router.get('/billing-details/:job_id', authMiddleware, billController.getBillDetails);
+router.get('/billing', authMiddleware,billController.getAllBillData);
 
 router.get('/get-lens-details', authMiddleware, lensController.getLensCategory);
 router.post('/update-lens-status', authMiddleware, lensController.updateStatus);
@@ -67,5 +69,8 @@ router.get("/customer-search/suggest", authMiddleware, customerController.custom
 router.post("/search-by-id", authMiddleware, searchController.idSearch);
 
 router.get('/dashboard', authMiddleware, dashboardController.getDashboardData);
+
+router.post('/create-expense', authMiddleware, expensesController.createExpense);
+router.get('/get-all-expenses',authMiddleware, expensesController.getAllExpenses)
 
 module.exports = router;

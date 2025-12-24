@@ -127,3 +127,61 @@ exports.getBillDetails = (req, res) => {
     });
 };
 
+//get all bill data
+exports.getAllBillData = (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = (page - 1) * limit;
+
+    const { fromDate, toDate } = req.query;
+
+    let sql = `
+        SELECT SQL_CALC_FOUND_ROWS 
+               billing.*,
+               users.user_name AS billed_by
+        FROM billing
+        LEFT JOIN users ON users.user_id = billing.billed_by
+        WHERE billing.payment_status = 1
+          AND billing.bill_type != 'claim'
+    `;
+    const params = [];
+
+    // ✅ Apply date filter if provided
+    if (fromDate && toDate) {
+        sql += ` AND DATE(bill_date) BETWEEN ? AND ?`;
+        params.push(fromDate, toDate);
+    } else if (fromDate) {
+        sql += ` AND DATE(bill_date) >= ?`;
+        params.push(fromDate);
+    } else if (toDate) {
+        sql += ` AND DATE(bill_date) <= ?`;
+        params.push(toDate);
+    }
+
+    sql += ` ORDER BY bill_date DESC LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
+
+    db.query(sql, params, (err, results) => {
+        if (err) {
+            console.error('Fetch billings failed:', err);
+            return res.status(500).json({ message: 'Failed to fetch billings' });
+        }
+
+        db.query('SELECT FOUND_ROWS() as total', (err2, totalResult) => {
+            if (err2) {
+                return res.status(500).json({ message: 'Failed to fetch total count' });
+            }
+
+            const total = totalResult[0].total;
+            const totalPages = Math.ceil(total / limit);
+
+            res.status(200).json({
+                page,
+                limit,
+                total,
+                totalPages,
+                billing: results
+            });
+        });
+    });
+};

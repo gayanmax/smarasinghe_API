@@ -375,15 +375,55 @@ exports.updateJob = (req, res) => {
                 const newVal = updates[field];
 
                 if (oldVal != newVal) {
-                    const fieldMessage = `${field} updated!`; // ✅ UPDATED FIELD NAME
+
+                    let fieldName = `${field} updated!`;
+                    let oldValue = String(oldVal ?? "");
+                    let newValue = String(newVal ?? "");
+
+                    // 🔹 lens_status: 0 → 1
+                    if (field === 'lens_status' && oldVal === 0 && newVal === 1) {
+                        fieldName = 'Lens Ready';
+                        oldValue = 'Pending';
+                        newValue = 'Ready';
+                    }
+
+                    // 🔹 frame_status: 0 → 1
+                    else if (field === 'frame_status' && oldVal === 0 && newVal === 1) {
+                        fieldName = 'Called';
+                        oldValue = 'Pending';
+                        newValue = 'Done';
+                    }
+
+                    // 🔹 order_status
+                    else if (field === 'order_status') {
+
+                        if (oldVal === 1 && newVal === 2) {
+                            fieldName = 'Job Ready';
+                            oldValue = 'Pending';
+                            newValue = 'Ready';
+                        }
+                        else if (oldVal === 2 && newVal === 3) {
+                            fieldName = 'Job Completed';
+                            oldValue = 'Ready';
+                            newValue = 'Completed';
+                        }
+                        else if ([1, 2, 3].includes(oldVal) && newVal === 0) {
+                            fieldName = 'Job Canceled';
+                            oldValue =
+                                oldVal === 1 ? 'Pending' :
+                                    oldVal === 2 ? 'Ready' :
+                                        'Completed';
+                            newValue = 'Canceled';
+                        }
+                    }
 
                     db.query(
                         logSql,
                         [
                             job_id,
-                            fieldMessage,           // <- now uses "field updated!"
-                            String(oldVal ?? ""),
-                            String(newVal ?? ""),
+                            fieldName,
+                            oldValue,
+                            newValue,
                             changed_by
                         ],
                         (logErr) => {
@@ -405,18 +445,19 @@ exports.getJobLogs = (req, res) => {
     const { job_id } = req.params;
 
     const sql = `
-    SELECT 
-      log_id,
-      job_id,
-      field_name,
-      old_value,
-      new_value,
-      changed_by,
-      changed_at
-    FROM job_log
-    WHERE job_id = ?
-    ORDER BY changed_at ASC
-  `;
+      SELECT 
+        jl.log_id,
+        jl.job_id,
+        jl.field_name,
+        jl.old_value,
+        jl.new_value,
+        u.user_name AS changed_by,
+        jl.changed_at
+      FROM job_log jl
+      LEFT JOIN users u ON u.user_id = jl.changed_by
+      WHERE jl.job_id = ?
+      ORDER BY jl.changed_at ASC
+    `;
 
     db.query(sql, [job_id], (err, result) => {
         if (err) {
