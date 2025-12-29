@@ -9,8 +9,9 @@ const frameController = require('../controllers/frameController');
 const prescribedByController = require('../controllers/prescribedByController');
 const lensController = require('../controllers/lensController');
 const searchController = require('../controllers/searchController');
-const dashboardController = require('../controllers/dashboardController')
-const expensesController = require('../controllers/expensesController')
+const dashboardController = require('../controllers/dashboardController');
+const expensesController = require('../controllers/expensesController');
+const reportController = require('../controllers/reportController');
 const authMiddleware = require('../middleware/authMiddleware');
 
 router.post('/register', authController.register);
@@ -71,6 +72,8 @@ router.post("/search-by-id", authMiddleware, searchController.idSearch);
 router.get('/dashboard', authMiddleware, dashboardController.getDashboardData);
 
 router.post('/create-expense', authMiddleware, expensesController.createExpense);
-router.get('/get-all-expenses',authMiddleware, expensesController.getAllExpenses)
+router.get('/get-all-expenses',authMiddleware, expensesController.getAllExpenses);
+
+router.post('/get-report-data', authMiddleware, reportController.getReportData);
 
 module.exports = router;
