@@ -23,19 +23,21 @@ exports.getReportData = (req, res) => {
         return res.status(400).json({ message: "Method is required" });
     }
 
-    // ----------- DAILY -----------
+// ----------- DAILY -----------
     if (method === "daily") {
         const today = formatDate(new Date());
-
         const result = {};
 
         // 1) bills (exclude claims)
         const billsSQL = `
-            SELECT bill_id, job_id, amount, billed_by
-            FROM billing
-            WHERE DATE(bill_date) = ?
-              AND bill_type <> 'claim'
-        `;
+        SELECT SQL_CALC_FOUND_ROWS
+        billing.*,
+        users.user_name AS billed_by
+        FROM billing
+        LEFT JOIN users ON users.user_id = billing.billed_by
+        WHERE DATE(bill_date) = ?
+        AND billing.bill_type != 'claim'
+    `;
 
         runQuery(billsSQL, [today], (err, bills) => {
             if (err) return res.status(500).json({ message: "DB error bills" });
@@ -43,10 +45,19 @@ exports.getReportData = (req, res) => {
             result.bills = bills;
             result.bill_count = bills.length;
 
+            // total billing amount
+            result.total_billing_amount = bills.reduce((sum, bill) => sum + parseFloat(bill.amount || 0), 0);
+
             // 2) expenses
             const expSQL = `
-                SELECT expenses_id, amount, expenses_by, reason
-                FROM daily_expenses
+                SELECT SQL_CALC_FOUND_ROWS
+                d.expenses_id,
+                    d.amount,
+                    d.reason,
+                    u.user_name AS expenses_by
+                FROM daily_expenses d
+                LEFT JOIN users u
+                ON d.expenses_by = u.user_id
                 WHERE DATE(date_time) = ?
             `;
 
@@ -56,12 +67,15 @@ exports.getReportData = (req, res) => {
                 result.expenses = expenses;
                 result.expense_count = expenses.length;
 
+                // total expenses amount
+                result.total_expenses_amount = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+
                 // 3) job count
                 const jobSQL = `
-                    SELECT COUNT(*) AS job_count
-                    FROM job
-                    WHERE DATE(create_date) = ?
-                `;
+                SELECT COUNT(*) AS job_count
+                FROM job
+                WHERE DATE(create_date) = ?
+            `;
 
                 runQuery(jobSQL, [today], (err3, jobRows) => {
                     if (err3) return res.status(500).json({ message: "DB error jobs" });
@@ -70,10 +84,10 @@ exports.getReportData = (req, res) => {
 
                     // 4) customer count
                     const custSQL = `
-                        SELECT COUNT(*) AS customer_count
-                        FROM customers
-                        WHERE DATE(create_date) = ?
-                    `;
+                    SELECT COUNT(*) AS customer_count
+                    FROM customers
+                    WHERE DATE(create_date) = ?
+                `;
 
                     runQuery(custSQL, [today], (err4, custRows) => {
                         if (err4) return res.status(500).json({ message: "DB error customers" });

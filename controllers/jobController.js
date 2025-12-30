@@ -333,8 +333,8 @@ exports.updateJob = (req, res) => {
     const updates = req.body;
     const changed_by = req.user?.user_id; // logged user
 
-    // Step 1: Fetch current job record
     const selectSql = `SELECT * FROM job WHERE job_id = ?`;
+
     db.query(selectSql, [job_id], (err, result) => {
         if (err) {
             console.error("Job lookup failed:", err);
@@ -346,17 +346,32 @@ exports.updateJob = (req, res) => {
 
         const oldJob = result[0];
 
-        // Step 2: Build update query
         const fields = Object.keys(updates);
         if (fields.length === 0) {
             return res.status(400).json({ message: "No fields to update" });
         }
 
-        const setClause = fields.map(f => `${f} = ?`).join(", ");
-        const values = fields.map(f => updates[f]);
+        // ---------- BUILD UPDATE QUERY ----------
+        const setParts = [];
+        const values = [];
+
+        fields.forEach(f => {
+            setParts.push(`${f} = ?`);
+            values.push(updates[f]);
+        });
+
+        // ⭐️ If order_status changes → also update datetime column
+        if (
+            typeof updates.order_status !== "undefined" &&
+            updates.order_status != oldJob.order_status
+        ) {
+            setParts.push(`orderStatus_date = NOW()`);
+        }
+
+        // push job_id for WHERE clause
         values.push(job_id);
 
-        const updateSql = `UPDATE job SET ${setClause} WHERE job_id = ?`;
+        const updateSql = `UPDATE job SET ${setParts.join(", ")} WHERE job_id = ?`;
 
         db.query(updateSql, values, (err2) => {
             if (err2) {
@@ -364,7 +379,7 @@ exports.updateJob = (req, res) => {
                 return res.status(500).json({ message: "Job update failed" });
             }
 
-            // Step 3: Insert logs for changed fields
+            // ---------- LOG CHANGES ----------
             const logSql = `
                 INSERT INTO job_log (job_id, field_name, old_value, new_value, changed_by)
                 VALUES (?, ?, ?, ?, ?)
@@ -380,21 +395,16 @@ exports.updateJob = (req, res) => {
                     let oldValue = String(oldVal ?? "");
                     let newValue = String(newVal ?? "");
 
-                    // 🔹 lens_status: 0 → 1
                     if (field === 'lens_status' && oldVal === 0 && newVal === 1) {
                         fieldName = 'Lens Ready';
                         oldValue = 'Pending';
                         newValue = 'Ready';
                     }
-
-                    // 🔹 frame_status: 0 → 1
                     else if (field === 'frame_status' && oldVal === 0 && newVal === 1) {
                         fieldName = 'Called';
                         oldValue = 'Pending';
                         newValue = 'Done';
                     }
-
-                    // 🔹 order_status
                     else if (field === 'order_status') {
 
                         if (oldVal === 1 && newVal === 2) {

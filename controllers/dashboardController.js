@@ -54,17 +54,33 @@ exports.getDashboardData = (req, res) => {
                         return res.status(500).json({ success: false, message: "Server error" });
                     }
 
-                    // ------ Final Response ------
-                    const data = {
-                        dailyCustomers: dailyCustomerResult[0].count,
-                        dailyJobs: dailyJobResult[0].count,
-                        pendingJobs: pendingResult[0].count,
-                        readyJobs: readyResult[0].count
-                    };
+                    // 5. Get today's total expenses
+                    const dailyExpenseQuery = `
+                        SELECT IFNULL(SUM(amount), 0) AS total
+                        FROM daily_expenses
+                        WHERE DATE(date_time) = CURDATE()
+                    `;
 
-                    return res.status(200).json({ success: true, data });
+                    db.query(dailyExpenseQuery, (err, dailyExpenseResult) => {
+                        if (err) {
+                            console.error(err);
+                            return res.status(500).json({ success: false, message: "Server error" });
+                        }
+
+                        // ------ Final Response ------
+                        const data = {
+                            dailyCustomers: dailyCustomerResult[0].count,
+                            dailyJobs: dailyJobResult[0].count,
+                            pendingJobs: pendingResult[0].count,
+                            readyJobs: readyResult[0].count,
+                            dailyExpenseTotal: dailyExpenseResult[0].total
+                        };
+
+                        return res.status(200).json({ success: true, data });
+                    });
                 });
             });
         });
     });
 };
+

@@ -89,16 +89,16 @@ exports.getBillDetails = (req, res) => {
 
         // ✅ Step 2: Get billing details
         const billingSql = `
-      SELECT 
-        bill_id,
-        amount,
-        bill_type,
-        bill_date,
-        billed_by
-      FROM billing
-      WHERE job_id = ?
-      ORDER BY bill_date ASC
-    `;
+          SELECT 
+            bill_id,
+            amount,
+            bill_type,
+            bill_date,
+            billed_by
+          FROM billing
+          WHERE job_id = ?
+          ORDER BY bill_date ASC
+        `;
 
         db.query(billingSql, [job_id], (err2, billingRows) => {
             if (err2) {
