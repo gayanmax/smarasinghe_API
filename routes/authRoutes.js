@@ -36,6 +36,7 @@ router.get('/jobs/:job_id/logs', authMiddleware, jobController.getJobLogs);
 router.get('/jobs/get-all-jobs/:order_status', authMiddleware, jobController.getAllJobsByOrderStatus);
 router.get('/jobs/get-jobs/:cus_id', authMiddleware, jobController.getJobsByCustomer);
 router.post('/jobs/add-claimer', authMiddleware, jobController.addClaimerToJob);
+router.get('/getAllOpticalMasters', authMiddleware, jobController.getAllOpticalMasters);
 
 router.post('/create-billing', authMiddleware, billController.createBilling);
 router.get('/billing-details/:job_id', authMiddleware, billController.getBillDetails);
@@ -59,6 +60,7 @@ router.get('/get-all-frame-keys', authMiddleware, frameController.getAllFrameKey
 router.post('/insert-frame', authMiddleware,  frameController.insertFrame);
 router.get('/get-active-frames', authMiddleware,  frameController.getActiveFrames);
 router.put('/update-frame-status/:id', authMiddleware, frameController.updateFrameStatus);
+router.get('/by-brand', authMiddleware, frameController.getFrameByBrand);
 
 // prescribedBy APIs
 router.post("/create-prescribed", authMiddleware, prescribedByController.createPrescribedBy);

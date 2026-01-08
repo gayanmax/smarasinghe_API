@@ -4,13 +4,13 @@ exports.getFrameCategory = (req, res) => {
 
     const table_name = req.query.name;
 
-    const allowedTables = ['frame_brand', 'frame_category', 'frame_color', 'frame_size', 'frame_type'];
+    const allowedTables = ['frame_brand', 'frame_bridgewidth', 'frame_color', 'frame_lenswidth', 'frame_model','frame_templelength'];
 
     if (!allowedTables.includes(table_name)) {
         return res.status(400).json({message: 'Invalid table name'});
     }
 
-    const sql = `SELECT id, name FROM ${table_name} WHERE status = 1`;
+    const sql = `SELECT * FROM ${table_name} WHERE status = 1`;
 
     db.query(sql, (err, rows) => {
         if (err) {
@@ -21,6 +21,7 @@ exports.getFrameCategory = (req, res) => {
         res.status(200).json(rows);
     });
 };
+
 
 exports.getAllFrameDetails = (req, res) => {
 
@@ -149,6 +150,35 @@ exports.updateStatus = (req, res) => {
         res.status(200).json({success: true, message: 'Status updated to 0'});
     });
 };
+
+exports.getFrameByBrand = (req, res) => {
+
+    const { brand } = req.query;
+
+    if (!brand) {
+        return res.status(400).json({ message: 'Frame brand is required' });
+    }
+
+    const sql = `
+        SELECT id, frame_id, frame_selling_price
+        FROM frame
+        WHERE frame_brand = ? AND status = 1
+    `;
+
+    db.query(sql, [brand], (err, rows) => {
+        if (err) {
+            console.error('DB Error:', err);
+            return res.status(500).json({ message: 'Database error' });
+        }
+
+        res.status(200).json({
+            brand: brand,
+            data: rows
+        });
+    });
+};
+
+
 // ==========================
 // 🔹 Insert New Record
 // ==========================
@@ -179,7 +209,6 @@ exports.insertData = (req, res) => {
         });
     });
 };
-
 
 exports.insertFrame = (req, res) => {
     const {
@@ -258,3 +287,4 @@ exports.getActiveFrames = (req, res) => {
         // });
     });
 };
+
