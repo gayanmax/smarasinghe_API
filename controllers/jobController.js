@@ -8,13 +8,13 @@ exports.createJob = (req, res) => {
         r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
         l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
         pupil_distance, seg_h,
-        prescribed_By_Id, comment, due_date,
+        prescribed_By_Id, comment, dm, htn, due_date,
         order_status,
         lens_id, lens_status,
-        frame_id, frame_status,
+        frame_id, frame_material, frame_category, frame_type, frame_status,
         frame_price,
         lens_category, lens_type, lens_color, lens_size, lens_ordered_by, lens_ordered_date,
-        lense_price, price, discount, netPrice,is_claimer, due_amount
+        lense_price, price, discount, netPrice,is_claimer, due_amount,
     } = req.body;
 
     const created_by = req.user?.user_id; // ✅ logged-in user from JWT
@@ -40,20 +40,20 @@ exports.createJob = (req, res) => {
         r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
         l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
         pupil_distance, seg_h,
-        prescribed_By_Id, comment, due_date,
+        prescribed_By_Id, comment, dm, htn, due_date,
         order_status, lens_id, lens_status,
-        frame_id, frame_status,
-        frame_price, lense_price, price, discount, netPrice,is_claimer, due_amount,
+        frame_id, frame_material, frame_category, frame_type, frame_status,
+        frame_price, lense_price, price, discount, netPrice, is_claimer, due_amount,
         create_date
       ) VALUES (
         ?,
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
         ?, ?,
-        ?, ?, ?,
-        ?, ?, ?,
-        ?, ?,?,
-        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, 
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?,
         NOW()
       )
     `;
@@ -63,10 +63,10 @@ exports.createJob = (req, res) => {
             r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
             l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
             pupil_distance, seg_h,
-            prescribed_By_Id, comment, due_date,
+            prescribed_By_Id, comment, dm, htn, due_date,
             order_status, insertedLensId, lens_status,
-            frame_id, frame_status,
-            frame_price, lense_price, price, discount, netPrice,is_claimer, due_amount
+            frame_id, frame_material, frame_category, frame_type, frame_status,
+            frame_price, lense_price, price, discount, netPrice, is_claimer, due_amount
         ], (jobErr, jobResult) => {
             if (jobErr) {
                 console.error("Job insert failed:", jobErr);
@@ -100,7 +100,7 @@ exports.createJob = (req, res) => {
 };
 
 
-// ✅ Get Job Details with customer + billing + temp_billing
+// ✅ Get Job Details with customer + billing + temp_billing + frame + lens meta
 exports.getJobDetails = (req, res) => {
     const { job_id } = req.params;
 
@@ -108,7 +108,7 @@ exports.getJobDetails = (req, res) => {
         return res.status(404).json({ message: "Job id not found" });
     }
 
-    // ✅ Step 1: Job + Customer
+    // ===== Step 1: Job + Customer =====
     const jobSql = `
         SELECT 
             j.*,
@@ -116,6 +116,9 @@ exports.getJobDetails = (req, res) => {
             c.name AS customer_name,
             c.address AS customer_address,
             c.mobile AS customer_mobile,
+            c.lan_number AS customer_lan_number,
+            c.age AS customer_age,
+            c.nic AS customer_nic,
             c.email AS customer_email
         FROM job j
         INNER JOIN customers c ON j.cus_id = c.cus_id
@@ -123,158 +126,180 @@ exports.getJobDetails = (req, res) => {
     `;
 
     db.query(jobSql, [job_id], (err, jobResult) => {
-        if (err) {
-            console.error(err);
-            return res.status(500).json({ message: "Job lookup failed" });
-        }
-
-        if (jobResult.length === 0) {
-            return res.status(404).json({ message: "Job not found" });
-        }
+        if (err) return res.status(500).json({ message: "Job lookup failed" });
+        if (!jobResult.length) return res.status(404).json({ message: "Job not found" });
 
         const job = jobResult[0];
 
-        // ✅ Step 2: billing table
+        // ===== Step 2: Billing =====
         const billingSql = `
-            SELECT 
-                bill_id,
-                amount,
-                bill_type,
-                payment_method,
-                bill_date,
-                billed_by
+            SELECT bill_id, amount, bill_type, payment_method, bill_date, billed_by
             FROM billing
             WHERE job_id = ?
             AND bill_type <> 'claim'
             ORDER BY bill_date ASC
         `;
 
-        // ✅ Step 3: temp_billing table
         const tempBillingSql = `
-            SELECT 
-                bill_id,
-                amount,
-                bill_type,
-                payment_method,
-                bill_date,
-                billed_by
+            SELECT bill_id, amount, bill_type, payment_method, bill_date, billed_by
             FROM temp_billing
             WHERE job_id = ?
             ORDER BY bill_date ASC
         `;
 
         db.query(billingSql, [job_id], (err2, billingRows) => {
-            if (err2) {
-                console.error(err2);
-                return res.status(500).json({ message: "Billing lookup failed" });
-            }
+            if (err2) return res.status(500).json({ message: "Billing lookup failed" });
 
             db.query(tempBillingSql, [job_id], (err3, tempBillingRows) => {
-                if (err3) {
-                    console.error(err3);
-                    return res.status(500).json({ message: "Temp billing lookup failed" });
-                }
+                if (err3) return res.status(500).json({ message: "Temp billing lookup failed" });
 
-                const billingTotal = billingRows.reduce(
-                    (s, r) => s + Number(r.amount || 0),
-                    0
-                );
-
-                const tempBillingTotal = tempBillingRows.reduce(
-                    (s, r) => s + Number(r.amount || 0),
-                    0
-                );
-
+                const billingTotal = billingRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+                const tempBillingTotal = tempBillingRows.reduce((s, r) => s + Number(r.amount || 0), 0);
                 const totalPaid = billingTotal + tempBillingTotal;
                 const dueAmount = Number(job.netPrice || 0) - totalPaid;
 
-                // ✅ Step 4: Lens (optional)
-                if (!job.lens_id) {
-                    return sendResponse(null);
-                }
+                // ===== Step 3: Frame lookup (optional) =====
+                const getFrame = (cb) => {
+                    if (!job.frame_id) return cb(null);
 
-                db.query(
-                    `SELECT * FROM lens WHERE lens_id = ?`,
-                    [job.lens_id],
-                    (err4, lensRows) => {
-                        if (err4) {
-                            console.error(err4);
-                            return res.status(500).json({ message: "Lens lookup failed" });
+                    db.query(
+                        `SELECT frame_id FROM frame WHERE id = ?`,
+                        [job.frame_id],
+                        (err, rows) => {
+                            if (err) return cb(null);
+                            cb(rows[0]?.frame_id || null);
                         }
-                        sendResponse(lensRows[0] || null);
-                    }
-                );
+                    );
+                };
 
-                // ✅ Unified response
-                function sendResponse(lensData) {
-                    res.status(200).json({
-                        job_id: job.job_id,
-                        r_sph: job.r_sph,
-                        r_cyl: job.r_cyl,
-                        r_axis: job.r_axis,
-                        r_va: job.r_va,
-                        r_iol: job.r_iol,
-                        r_add: job.r_add,
-                        l_sph: job.l_sph,
-                        l_cyl: job.l_cyl,
-                        l_axis: job.l_axis,
-                        l_va: job.l_va,
-                        l_iol: job.l_iol,
-                        l_add: job.l_add,
-                        lens_status: job.lens_status,
-                        lens_id: job.lens_id,
-                        frame_status: job.frame_status,
-                        frame_id: job.frame_id,
-                        pupil_distance: job.pupil_distance,
-                        prescribed_By_Id: job.prescribed_By_Id,
-                        seg_h: job.seg_h,
-                        comment: job.comment,
-                        due_date: job.due_date,
-                        order_status: job.order_status,
-                        create_date: job.create_date,
-                        is_claimer: job.is_claimer,
+                // ===== Step 4: Lens lookup (optional, meta only) =====
+                const getLens = (cb) => {
+                    if (!job.lens_id) return cb(null);
 
-                        customer: {
-                            cus_id: job.cus_id,
-                            name: job.customer_name,
-                            address: job.customer_address,
-                            mobile: job.customer_mobile,
-                            email: job.customer_email
-                        },
+                    const sql = `
+                        SELECT
+                            l.lens_id,
+                
+                            lc.id   AS lens_category_id,
+                            lc.name AS lens_category_name,
+                
+                            lco.id   AS lens_color_id,
+                            lco.name AS lens_color_name,
+                
+                            lt.id   AS lens_type_id,
+                            lt.name AS lens_type_name,
+                
+                            ls.id   AS lens_size_id,
+                            ls.name AS lens_size_name
+                
+                        FROM lens l
+                        LEFT JOIN lense_category lc ON l.lens_category = lc.id
+                        LEFT JOIN lense_color    lco ON l.lens_color    = lco.id
+                        LEFT JOIN lense_type     lt  ON l.lens_type     = lt.id
+                        LEFT JOIN lense_size     ls  ON l.lens_size     = ls.id
+                
+                        WHERE l.lens_id = ?
+                    `;
 
-                        pricing: {
-                            total_price: job.netPrice,
-                            billing_paid: billingTotal,
-                            temp_billing_paid: tempBillingTotal,
-                            total_paid: totalPaid,
-                            due_amount: dueAmount
-                        },
-
-                        lens: lensData,
-
-                        billing: billingRows.map(b => ({
-                            bill_id: b.bill_id,
-                            amount: b.amount,
-                            bill_type: b.bill_type,
-                            method: b.payment_method,
-                            date: b.bill_date,
-                            billed_by: b.billed_by
-                        })),
-
-                        temp_billing: tempBillingRows.map(b => ({
-                            temp_bill_id: b.bill_id,
-                            temp_amount: b.amount,
-                            temp_bill_type: b.bill_type,
-                            temp_method: b.payment_method,
-                            temp_date: b.bill_date,
-                            temp_billed_by: b.billed_by
-                        }))
+                    db.query(sql, [job.lens_id], (err, rows) => {
+                        if (err) return cb(null);
+                        cb(rows[0] || null);
                     });
-                }
+                };
+
+                const getPrescriber = (cb) => {
+                    if (!job.prescribed_By_Id) return cb(null);
+
+                    db.query(
+                        `SELECT prescribed_By_name FROM prescribedby WHERE prescribed_By_id = ?`,
+                        [job.prescribed_By_Id],
+                        (err, rows) => {
+                            if (err) return cb(null);
+                            cb(rows[0]?.prescribed_By_name || null);
+                        }
+                    );
+                };
+
+                // ===== Execute lookups =====
+                getFrame((frameName) => {
+                    getLens((lensMeta) => {
+                        getPrescriber((prescriber) => {
+                            res.status(200).json({
+                                job_id: job.job_id,
+
+                                // --- prescription ---
+                                r_sph: job.r_sph,
+                                r_cyl: job.r_cyl,
+                                r_axis: job.r_axis,
+                                r_va: job.r_va,
+                                r_iol: job.r_iol,
+                                r_add: job.r_add,
+                                l_sph: job.l_sph,
+                                l_cyl: job.l_cyl,
+                                l_axis: job.l_axis,
+                                l_va: job.l_va,
+                                l_iol: job.l_iol,
+                                l_add: job.l_add,
+
+                                dm: job.dm,
+                                htn: job.htn,
+
+                                // --- lens ---
+                                lens_id: job.lens_id,
+                                lens_status: job.lens_status,
+                                lens_meta: lensMeta, // ✅ added, id untouched
+
+                                // --- frame ---
+                                frame_id: job.frame_id,
+                                frame_name: frameName, // ✅ added
+                                frame_status: job.frame_status,
+                                frame_material: job.frame_material,
+                                frame_category: job.frame_category,
+                                frame_type: job.frame_type,
+
+                                pupil_distance: job.pupil_distance,
+                                prescribed_By_Id: job.prescribed_By_Id,
+                                prescriber:prescriber,
+                                seg_h: job.seg_h,
+                                comment: job.comment,
+                                due_date: job.due_date,
+                                order_status: job.order_status,
+                                create_date: job.create_date,
+                                is_claimer: job.is_claimer,
+                                job_status: job.job_status,
+
+                                customer: {
+                                    cus_id: job.cus_id,
+                                    name: job.customer_name,
+                                    address: job.customer_address,
+                                    mobile: job.customer_mobile,
+                                    lan_number: job.customer_lan_number,
+                                    email: job.customer_email,
+                                    age: job.customer_age,
+                                    nic: job.customer_nic
+                                },
+
+                                pricing: {
+                                    total_price: job.netPrice,
+                                    frame_price: job.frame_price,
+                                    lens_price: job.lense_price,
+                                    billing_paid: billingTotal,
+                                    temp_billing_paid: tempBillingTotal,
+                                    total_paid: totalPaid,
+                                    due_amount: dueAmount
+                                },
+
+                                billing: billingRows,
+                                temp_billing: tempBillingRows
+                            });
+                        });
+                    });
+                });
             });
         });
     });
 };
+
 
 // ✅ Update job with logging
 exports.updateJob = (req, res) => {
@@ -1016,9 +1041,10 @@ exports.getAllOpticalMasters = (req, res) => {
         lense_type: 'SELECT id, name FROM lense_type WHERE status = 1',
         lense_color: 'SELECT id, name FROM lense_color WHERE status = 1',
         lense_size: 'SELECT id, name FROM lense_size WHERE status = 1',
+        lens_orded: 'SELECT id, order_company_name FROM lens_orded WHERE is_active = 1',
 
         frame_brand: 'SELECT id, name FROM frame_brand WHERE status = 1',
-        prescribed: 'SELECT prescribed_By_Id,  prescribed_By_name, status,  create_date FROM prescribedby ORDER BY prescribed_By_Id DESC',
+        prescribed: 'SELECT prescribed_By_Id, prescribed_By_name FROM prescribedby ORDER BY prescribed_By_Id DESC',
 
         job_last_id: 'SELECT job_id FROM job ORDER BY job_id DESC LIMIT 1'
         // frame_bridgewidth: 'SELECT id, bridgewidth FROM frame_bridgewidth WHERE status = 1',

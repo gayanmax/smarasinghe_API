@@ -153,7 +153,7 @@ exports.updateStatus = (req, res) => {
 
 exports.getFrameByBrand = (req, res) => {
 
-    const { brand } = req.query;
+    const { brand } = req.body;
 
     if (!brand) {
         return res.status(400).json({ message: 'Frame brand is required' });

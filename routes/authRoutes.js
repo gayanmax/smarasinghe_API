@@ -60,7 +60,7 @@ router.get('/get-all-frame-keys', authMiddleware, frameController.getAllFrameKey
 router.post('/insert-frame', authMiddleware,  frameController.insertFrame);
 router.get('/get-active-frames', authMiddleware,  frameController.getActiveFrames);
 router.put('/update-frame-status/:id', authMiddleware, frameController.updateFrameStatus);
-router.get('/by-brand', authMiddleware, frameController.getFrameByBrand);
+router.post('/by-brand', authMiddleware, frameController.getFrameByBrand);
 
 // prescribedBy APIs
 router.post("/create-prescribed", authMiddleware, prescribedByController.createPrescribedBy);
