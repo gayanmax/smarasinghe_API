@@ -41,6 +41,7 @@ router.get('/getAllOpticalMasters', authMiddleware, jobController.getAllOpticalM
 router.post('/create-billing', authMiddleware, billController.createBilling);
 router.get('/billing-details/:job_id', authMiddleware, billController.getBillDetails);
 router.get('/billing', authMiddleware,billController.getAllBillData);
+router.post('/print-bill-by-id', authMiddleware,billController.getPrintBilling);
 
 router.get('/get-lens-details', authMiddleware, lensController.getLensCategory);
 router.post('/update-lens-status', authMiddleware, lensController.updateStatus);
@@ -51,16 +52,21 @@ router.post('/get-each-lens-item', authMiddleware, lensController.getLensNames);
 router.post('/create-Lens-Order-company', authMiddleware, lensController.createLensOrder);
 router.delete('/delete-lens-order-company/:id', authMiddleware, lensController.deleteLensOrder);
 
-router.get('/get-frame-details', authMiddleware, frameController.getFrameCategory);
+// router.get('/get-frame-details', authMiddleware, frameController.getFrameCategory);
 router.get('/get-frame-byId/:id', authMiddleware, frameController.getFrameById);
 router.post('/update-frame-status', authMiddleware, frameController.updateStatus);
 router.post('/insert-frame-details', authMiddleware, frameController.insertData);
 router.get('/get-all-frame-parts', authMiddleware, frameController.getAllFrameDetails);
 router.get('/get-all-frame-keys', authMiddleware, frameController.getAllFrameKeys);
-router.post('/insert-frame', authMiddleware,  frameController.insertFrame);
-router.get('/get-active-frames', authMiddleware,  frameController.getActiveFrames);
+router.post('/create-frame', authMiddleware,  frameController.createFrame);
+// router.get('/get-active-frames', authMiddleware,  frameController.getActiveFrames);
 router.put('/update-frame-status/:id', authMiddleware, frameController.updateFrameStatus);
 router.post('/by-brand', authMiddleware, frameController.getFrameByBrand);
+router.post('/verify-frame-key', authMiddleware, frameController.verifyFrameKey);
+router.patch('/frames/status/:id', authMiddleware, frameController.updateFrameStatus);
+router.delete("/remove-frame/:id", authMiddleware, frameController.deleteFrameById);
+router.put("/edit-frame-update", authMiddleware, frameController.updateFrameDetails);
+router.post('/create-frame-model', authMiddleware, frameController.createFrameModel);
 
 // prescribedBy APIs
 router.post("/create-prescribed", authMiddleware, prescribedByController.createPrescribedBy);

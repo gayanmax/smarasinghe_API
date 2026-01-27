@@ -284,3 +284,55 @@ exports.getAllBillData = (req, res) => {
         });
     });
 };
+
+exports.getPrintBilling = (req, res) => {
+    const { id, type } = req.body;
+
+    // Basic validation
+    if (!id || !type) {
+        return res.status(400).json({
+            success: false,
+            message: "Missing billing id or type",
+        });
+    }
+
+    let table = null;
+
+    if (type === "normal") {
+        table = "billing";
+    } else if (type === "temp") {
+        table = "temp_billing";
+    } else {
+        return res.status(400).json({
+            success: false,
+            message: "Invalid billing type",
+        });
+    }
+
+    const sql = `
+        SELECT *
+        FROM ${table}
+        WHERE bill_id = ?
+        LIMIT 1
+    `;
+
+    db.query(sql, [id], (err, results) => {
+        if (err) {
+            console.error("Billing fetch error:", err);
+            return res.status(500).json({
+                success: false,
+                message: "Database error",
+            });
+        }
+
+        if (!results || results.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Billing record not found",
+            });
+        }
+
+        // ✅ Send billing data
+        res.status(200).json(results[0]);
+    });
+};

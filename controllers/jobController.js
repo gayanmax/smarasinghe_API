@@ -597,20 +597,14 @@ exports.getJobsByCustomer = (req, res) => {
         SELECT 
             job_id,
             cus_id,
-            claim_id,
-            claim_status,
-            prescribed_By_Id,
-            seg_h,        
+            is_claimer,     
             due_date,
             order_status,
             create_date,
-            frame_price,
             frame_status,
-            lense_price,
             lens_status,
             due_amount,
             price,
-            discount,
             netPrice
         FROM job
         WHERE cus_id = ?
