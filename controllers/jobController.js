@@ -190,13 +190,19 @@ exports.getJobDetails = (req, res) => {
                             lt.name AS lens_type_name,
                 
                             ls.id   AS lens_size_id,
-                            ls.name AS lens_size_name
+                            ls.name AS lens_size_name,
+                            
+                            lo.id   AS lens_order_id,
+                            lo.order_company_name   AS lens_order_name,
                 
+                            l.lens_ordered_date
+                            
                         FROM lens l
                         LEFT JOIN lense_category lc ON l.lens_category = lc.id
                         LEFT JOIN lense_color    lco ON l.lens_color    = lco.id
                         LEFT JOIN lense_type     lt  ON l.lens_type     = lt.id
                         LEFT JOIN lense_size     ls  ON l.lens_size     = ls.id
+                        LEFT JOIN lens_orded     lo  ON l.lens_ordered_by = lo.id
                 
                         WHERE l.lens_id = ?
                     `;
@@ -243,7 +249,6 @@ exports.getJobDetails = (req, res) => {
 
                                 dm: job.dm,
                                 htn: job.htn,
-
                                 // --- lens ---
                                 lens_id: job.lens_id,
                                 lens_status: job.lens_status,
