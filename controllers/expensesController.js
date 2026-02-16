@@ -64,7 +64,7 @@ exports.getAllExpenses = (req, res) => {
         FROM daily_expenses d
         LEFT JOIN users u 
             ON d.expenses_by = u.user_id
-        WHERE 1 = 1
+        WHERE status = 1
     `;
 
     const params = [];
@@ -111,3 +111,41 @@ exports.getAllExpenses = (req, res) => {
     });
 };
 
+exports.removeExpense = (req, res) => {
+    const id = req.params.id;
+
+    if (!id) {
+        return res.status(400).json({
+            success: false,
+            message: "Expense id is required"
+        });
+    }
+
+    const sql = `
+        UPDATE daily_expenses
+        SET status = 0
+        WHERE expenses_id = ? AND status = 1
+    `;
+
+    db.query(sql, [id], (err, result) => {
+        if (err) {
+            console.error("DB Error:", err);
+            return res.status(500).json({
+                success: false,
+                message: "Database error"
+            });
+        }
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Expense not found or already removed"
+            });
+        }
+
+        return res.json({
+            success: true,
+            message: "Expense removed successfully"
+        });
+    });
+};

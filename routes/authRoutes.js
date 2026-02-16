@@ -11,6 +11,7 @@ const lensController = require('../controllers/lensController');
 const searchController = require('../controllers/searchController');
 const dashboardController = require('../controllers/dashboardController');
 const expensesController = require('../controllers/expensesController');
+const extraBillingController = require('../controllers/extraBillingController')
 const reportController = require('../controllers/reportController');
 const authMiddleware = require('../middleware/authMiddleware');
 
@@ -36,12 +37,16 @@ router.get('/jobs/:job_id/logs', authMiddleware, jobController.getJobLogs);
 router.get('/jobs/get-all-jobs/:order_status', authMiddleware, jobController.getAllJobsByOrderStatus);
 router.get('/jobs/get-jobs/:cus_id', authMiddleware, jobController.getJobsByCustomer);
 router.post('/jobs/add-claimer', authMiddleware, jobController.addClaimerToJob);
+router.post('/jobs/add-self-claimer/:jobId', authMiddleware, jobController.addSelfClaimJob);
 router.get('/getAllOpticalMasters', authMiddleware, jobController.getAllOpticalMasters);
+router.get('/get-all-claim-jobs', authMiddleware, jobController.getAllClaimJobs);
+router.post('/verify-claim-job-id', authMiddleware, jobController.verifyClimJobId)
 
 router.post('/create-billing', authMiddleware, billController.createBilling);
 router.get('/billing-details/:job_id', authMiddleware, billController.getBillDetails);
 router.get('/billing', authMiddleware,billController.getAllBillData);
 router.post('/print-bill-by-id', authMiddleware,billController.getPrintBilling);
+router.get("/get-diduction-billing", authMiddleware, billController.getDeductionBilling);
 
 router.get('/get-lens-details', authMiddleware, lensController.getLensCategory);
 router.post('/update-lens-status', authMiddleware, lensController.updateStatus);
@@ -81,6 +86,12 @@ router.get('/dashboard', authMiddleware, dashboardController.getDashboardData);
 
 router.post('/create-expense', authMiddleware, expensesController.createExpense);
 router.get('/get-all-expenses',authMiddleware, expensesController.getAllExpenses);
+router.put('/remove-expenses/:id',authMiddleware, expensesController.removeExpense);
+
+router.post('/create-extra-billing', authMiddleware, extraBillingController.addExtraBilling);
+router.get('/get-all-extra-billing', authMiddleware, extraBillingController.getAllExtraBilling);
+router.get('/get-extra-by-id/:id', authMiddleware, extraBillingController.getExtraBillingById);
+router.put('/remove-extra-billing/:id',authMiddleware, extraBillingController.removeExtraBilling);
 
 router.post('/get-report-data', authMiddleware, reportController.getReportData);
 

@@ -46,6 +46,7 @@ function insertBillingDeductions(job_id, recalculatedPayments, db, callback) {
         p.billed_by
     ]));
 
+    console.log("call back :",callback)
     console.log("Billing deduction values:", values);
     db.query(sql, [values], callback);
 }
@@ -232,41 +233,50 @@ exports.getAllBillData = (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
     const offset = (page - 1) * limit;
 
-    const { fromDate, toDate } = req.query;
+    const { fromDate, toDate, status } = req.query;
+
+    // ✅ payment_status is ALWAYS 1 (active / not removed)
+    const paymentStatus = 1;
+
+    // ✅ status ONLY decides which table to read from
+    const tableName = Number(status) === 2 ? 'temp_billing' : 'billing';
 
     let sql = `
-        SELECT SQL_CALC_FOUND_ROWS 
-               billing.*,
+        SELECT SQL_CALC_FOUND_ROWS
+               ${tableName}.*,
                users.user_name AS billed_by
-        FROM billing
-        LEFT JOIN users ON users.user_id = billing.billed_by
-        WHERE billing.payment_status = 1
-          AND billing.bill_type != 'claim'
+        FROM ${tableName}
+        LEFT JOIN users ON users.user_id = ${tableName}.billed_by
+        WHERE ${tableName}.payment_status = ?
+          AND ${tableName}.bill_type != 'claim'
     `;
-    const params = [];
 
-    // ✅ Apply date filter if provided
+    const params = [paymentStatus];
+
+    // ✅ Date filters
     if (fromDate && toDate) {
-        sql += ` AND DATE(bill_date) BETWEEN ? AND ?`;
+        sql += ` AND DATE(${tableName}.bill_date) BETWEEN ? AND ?`;
         params.push(fromDate, toDate);
     } else if (fromDate) {
-        sql += ` AND DATE(bill_date) >= ?`;
+        sql += ` AND DATE(${tableName}.bill_date) >= ?`;
         params.push(fromDate);
     } else if (toDate) {
-        sql += ` AND DATE(bill_date) <= ?`;
+        sql += ` AND DATE(${tableName}.bill_date) <= ?`;
         params.push(toDate);
     }
 
-    sql += ` ORDER BY bill_date DESC LIMIT ? OFFSET ?`;
+    sql += ` ORDER BY ${tableName}.bill_date DESC LIMIT ? OFFSET ?`;
     params.push(limit, offset);
 
     db.query(sql, params, (err, results) => {
+        // console.log("sql:", sql, "params:", params);
+
         if (err) {
             console.error('Fetch billings failed:', err);
             return res.status(500).json({ message: 'Failed to fetch billings' });
         }
 
-        db.query('SELECT FOUND_ROWS() as total', (err2, totalResult) => {
+        db.query('SELECT FOUND_ROWS() AS total', (err2, totalResult) => {
             if (err2) {
                 return res.status(500).json({ message: 'Failed to fetch total count' });
             }
@@ -279,6 +289,7 @@ exports.getAllBillData = (req, res) => {
                 limit,
                 total,
                 totalPages,
+                table: tableName,
                 billing: results
             });
         });
@@ -336,3 +347,97 @@ exports.getPrintBilling = (req, res) => {
         res.status(200).json(results[0]);
     });
 };
+
+// get bill data form deduction for bulk print
+exports.getDeductionBilling = async (req, res) => {
+    const { fromDate, toDate } = req.query;
+
+    if (!fromDate || !toDate) {
+        return res.status(400).json({
+            message: "fromDate and toDate are required"
+        });
+    }
+
+    const sql = `
+        SELECT 
+            bd.bill_id,
+            bd.job_id,
+            bd.amount,
+            bd.payment_method,
+            bd.bill_type,
+            bd.bill_date,
+
+            j.cus_id,
+            COALESCE(j.netPrice, 0) AS netPrice,
+            COALESCE(j.frame_deduction, 0) AS frame_deduction,
+            COALESCE(j.due_amount, 0) AS due_amount,
+            (COALESCE(j.netPrice, 0) - COALESCE(j.frame_deduction, 0)) AS total_price,
+
+            c.cus_id,
+            c.name AS name,
+            c.age AS age,
+            c.nic AS nic,
+            c.email AS email,
+            c.lan_number AS lan_number,
+            c.mobile AS mobile,
+            c.address AS address
+            
+        FROM billing_deduction bd
+        LEFT JOIN job j ON bd.job_id = j.job_id
+        LEFT JOIN customers c ON j.cus_id = c.cus_id
+        WHERE bd.payment_status = 1
+        AND bd.bill_date BETWEEN ? AND ?
+        ORDER BY bd.bill_date ASC
+    `;
+
+    try {
+        db.query(sql, [fromDate, toDate], (err, rows) => {
+            if (err) {
+                console.error("Database error:", err);
+                return res.status(500).json({ message: "Database error" });
+            }
+
+            const totalCount = rows.length;
+
+            if (!rows.length) {
+                return res.status(200).json({
+                    totalCount: 0,
+                    data: []
+                });
+            }
+
+            const finalData = rows.map(row => {
+                return {
+                    bill_id: row.bill_id,
+                    job_id: row.job_id,
+                    amount: row.amount,
+                    payment_method: row.payment_method,
+                    bill_type: row.bill_type,
+                    bill_date: row.bill_date,
+                    due_amount: row.due_amount,
+                    total_price: row.total_price,
+                    customer: {
+                        cus_id: row.cus_id,
+                        name: row.name,
+                        age: row.age,
+                        mobile: row.mobile,
+                        email: row.email,
+                        lan_number: row.lan_number,
+                        nic: row.nic,
+                        address: row.address
+                    }
+                };
+            });
+
+            return res.status(200).json({
+                totalCount,
+                data: finalData
+            });
+        });
+
+    } catch (error) {
+        console.error("Server error:", error);
+        return res.status(500).json({ message: "Server error" });
+    }
+};
+

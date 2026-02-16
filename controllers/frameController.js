@@ -263,67 +263,6 @@ exports.insertData = (req, res) => {
     });
 };
 
-// exports.insertFrame = (req, res) => {
-//     const {
-//         frame_name,
-//         frame_type,
-//         frame_brand,
-//         frame_color,
-//         frame_size,
-//         status
-//     } = req.body;
-//
-//     // Validate required fields
-//     if (!frame_name || !frame_type || !frame_brand || !frame_color || !frame_size) {
-//         return res.status(400).json({ message: "All fields are required" });
-//     }
-//
-//     // Generate unique frame_id
-//     const combinedName = (
-//         frame_name + "/" + frame_type + "/" + frame_brand + "/" + frame_color + "/" + frame_size
-//     ).replace(/\s+/g, '').toLowerCase();
-//
-//     const frameStatus = status !== undefined ? status : 1;
-//
-//     // 🟡 Step 1: Check if frame_id already exists
-//     const checkSql = `SELECT frame_id FROM frame WHERE frame_id = ?`;
-//
-//     db.query(checkSql, [combinedName], (checkErr, checkResult) => {
-//         if (checkErr) {
-//             console.error("Error checking duplicate frame_id:", checkErr);
-//             return res.status(500).json({ message: "Database error during duplicate check", error: checkErr });
-//         }
-//
-//         if (checkResult.length > 0) {
-//             // Duplicate found
-//             return res.status(409).json({
-//                 success: false,
-//                 message: "Frame already exists with the same combination"
-//             });
-//         }
-//
-//         // 🟢 Step 2: Insert new frame
-//         const insertSql = `
-//             INSERT INTO frame
-//             (frame_id, frame_name, frame_type, frame_brand, frame_color, frame_size, status)
-//             VALUES (?, ?, ?, ?, ?, ?, ?)
-//         `;
-//
-//         db.query(insertSql, [combinedName, frame_name, frame_type, frame_brand, frame_color, frame_size, frameStatus], (insertErr, result) => {
-//             if (insertErr) {
-//                 console.error("Error inserting frame:", insertErr);
-//                 return res.status(500).json({ message: "Database error", error: insertErr });
-//             }
-//
-//             return res.status(201).json({
-//                 success: true,
-//                 message: "Frame inserted successfully",
-//                 frame_id: combinedName
-//             });
-//         });
-//     });
-// };
-
 // create frame in frame table
 exports.createFrame = (req, res) => {
     const { formData } = req.body;
@@ -343,7 +282,8 @@ exports.createFrame = (req, res) => {
         templeLength,
         color,
         sellingPrice,
-        discountPrice
+        discountPrice,
+        quantity
     } = formData;
 
     // basic safety check
@@ -356,12 +296,16 @@ exports.createFrame = (req, res) => {
         !templeLength ||
         !color ||
         sellingPrice === undefined ||
-        discountPrice === undefined
+        discountPrice === undefined ||
+        quantity === undefined
     ) {
         return res.status(400).json({
             message: "Missing required fields"
         });
     }
+
+    // ✅ status logic
+    const status = quantity > 0 ? 1 : 0;
 
     const sql = `
         INSERT INTO frame (
@@ -373,8 +317,10 @@ exports.createFrame = (req, res) => {
             frame_templelength,
             frame_color,
             frame_selling_price,
-            frame_discount_price
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            frame_discount_price,
+            frame_quantity,
+            status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const values = [
@@ -386,14 +332,15 @@ exports.createFrame = (req, res) => {
         templeLength,
         color,
         sellingPrice,
-        discountPrice
+        discountPrice,
+        quantity,
+        status
     ];
 
     db.query(sql, values, (err, result) => {
         if (err) {
             console.error("Create frame error:", err);
 
-            // duplicate frame key (extra safety)
             if (err.code === "ER_DUP_ENTRY") {
                 return res.status(409).json({
                     message: "Frame key already exists"
@@ -411,6 +358,7 @@ exports.createFrame = (req, res) => {
         });
     });
 };
+
 
 // exports.getActiveFrames = (req, res) => {
 //     const sql = `SELECT id,frame_id FROM frame WHERE status = 1`;

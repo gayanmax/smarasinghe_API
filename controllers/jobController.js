@@ -14,91 +14,130 @@ exports.createJob = (req, res) => {
         frame_id, frame_material, frame_category, frame_type, frame_status,
         frame_price,
         lens_category, lens_type, lens_color, lens_size, lens_ordered_by, lens_ordered_date,
-        lense_price, price, discount, netPrice,is_claimer, due_amount,
+        lense_price, price, discount, netPrice, is_claimer, due_amount,
     } = req.body;
 
-    const created_by = req.user?.user_id; // ✅ logged-in user from JWT
+    const created_by = req.user?.user_id;
 
-    // 🟢 Step 1: Insert into lens_orded
+    /* ---------------- STEP 1: INSERT LENS ---------------- */
     const lensSql = `
-    INSERT INTO lens
-    (lens_category, lens_type, lens_color, lens_size, lens_ordered_by, lens_ordered_date)
-    VALUES (?, ?, ?, ?, ?, ?)`;
-
-    db.query(lensSql, [lens_category, lens_type, lens_color, lens_size, lens_ordered_by, lens_ordered_date], (lensErr, lensResult) => {
-        if (lensErr) {
-            console.error("Lens insert failed:", lensErr);
-            return res.status(500).json({ message: "Lens insert failed", error: lensErr });
-        }
-
-        const insertedLensId = lensResult.insertId; // ✅ Get lens ID
-
-        // 🟢 Step 2: Insert into job (using new lens ID)
-        const jobSql = `
-      INSERT INTO job (
-        cus_id,
-        r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
-        l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
-        pupil_distance, seg_h,
-        prescribed_By_Id, comment, dm, htn, due_date,
-        order_status, lens_id, lens_status,
-        frame_id, frame_material, frame_category, frame_type, frame_status,
-        frame_price, lense_price, price, discount, netPrice, is_claimer, due_amount,
-        create_date
-      ) VALUES (
-        ?,
-        ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?,
-        ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, 
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?,
-        NOW()
-      )
+        INSERT INTO lens
+        (lens_category, lens_type, lens_color, lens_size, lens_ordered_by, lens_ordered_date)
+        VALUES (?, ?, ?, ?, ?, ?)
     `;
 
-        db.query(jobSql, [
-            cus_id,
-            r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
-            l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
-            pupil_distance, seg_h,
-            prescribed_By_Id, comment, dm, htn, due_date,
-            order_status, insertedLensId, lens_status,
-            frame_id, frame_material, frame_category, frame_type, frame_status,
-            frame_price, lense_price, price, discount, netPrice, is_claimer, due_amount
-        ], (jobErr, jobResult) => {
-            if (jobErr) {
-                console.error("Job insert failed:", jobErr);
-                return res.status(500).json({ message: "Job insert failed", error: jobErr });
+    db.query(
+        lensSql,
+        [lens_category, lens_type, lens_color, lens_size, lens_ordered_by, lens_ordered_date],
+        (lensErr, lensResult) => {
+            if (lensErr) {
+                console.error("Lens insert failed:", lensErr);
+                return res.status(500).json({ message: "Lens insert failed" });
             }
 
-            const jobId = jobResult.insertId;
+            const insertedLensId = lensResult.insertId;
 
-            // 🟢 Step 3: Insert into job_log
-        const logSql = `
-        INSERT INTO job_log (job_id, field_name, old_value, new_value, changed_by)
-        VALUES (?, ?, ?, ?, ?)
-      `;
-            const logComment = `Job created for customer`;
+            /* ---------------- STEP 2: GET FRAME PRICES ---------------- */
+            const frameSql = `
+                SELECT frame_selling_price, frame_discount_price
+                FROM frame
+                WHERE id = ?
+            `;
 
-            db.query(logSql, [jobId, "Create new job", "", logComment, created_by || null], (logErr) => {
-                if (logErr) {
-                    console.error("Job log insert failed:", logErr);
-                    // ⚠️ Don't block response if log fails
+            db.query(frameSql, [frame_id], (frameErr, frameResult) => {
+                if (frameErr) {
+                    console.error("Frame fetch failed:", frameErr);
+                    return res.status(500).json({ message: "Frame fetch failed" });
                 }
-            });
 
-            // 🟢 Final Response
-            res.status(201).json({
-                message: "Job created successfully",
-                jobId,
-                lens_orded_id: insertedLensId
+                if (frameResult.length === 0) {
+                    return res.status(404).json({ message: "Frame not found" });
+                }
+
+                const {
+                    frame_selling_price,
+                    frame_discount_price
+                } = frameResult[0];
+
+                // 🧮 Calculate frame deduction
+                const frame_deduction =
+                    Number(frame_selling_price || 0) -
+                    Number(frame_discount_price || 0);
+
+                /* ---------------- STEP 3: INSERT JOB ---------------- */
+                const jobSql = `
+                    INSERT INTO job (
+                        cus_id,
+                        r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
+                        l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
+                        pupil_distance, seg_h,
+                        prescribed_By_Id, comment, dm, htn, due_date,
+                        order_status, lens_id, lens_status,
+                        frame_id, frame_material, frame_category, frame_type, frame_status,
+                        frame_price, frame_deduction,
+                        lense_price, price, discount, netPrice, is_claimer, due_amount,
+                        create_date
+                    ) VALUES (
+                        ?,
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?,
+                        ?, ?, ?, ?, ?, ?,
+                        NOW()
+                    )
+                `;
+
+                db.query(
+                    jobSql,
+                    [
+                        cus_id,
+                        r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
+                        l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
+                        pupil_distance, seg_h,
+                        prescribed_By_Id, comment, dm, htn, due_date,
+                        order_status, insertedLensId, lens_status,
+                        frame_id, frame_material, frame_category, frame_type, frame_status,
+                        frame_price, frame_deduction,
+                        lense_price, price, discount, netPrice, is_claimer, due_amount
+                    ],
+                    (jobErr, jobResult) => {
+                        if (jobErr) {
+                            console.error("Job insert failed:", jobErr);
+                            return res.status(500).json({ message: "Job insert failed" });
+                        }
+
+                        const jobId = jobResult.insertId;
+
+                        /* ---------------- STEP 4: JOB LOG ---------------- */
+                        const logSql = `
+                            INSERT INTO job_log
+                            (job_id, field_name, old_value, new_value, changed_by)
+                            VALUES (?, ?, ?, ?, ?)
+                        `;
+
+                        db.query(
+                            logSql,
+                            [jobId, "Create new job", "", "Job created for customer", created_by || null],
+                            () => {}
+                        );
+
+                        /* ---------------- FINAL RESPONSE ---------------- */
+                        res.status(201).json({
+                            message: "Job created successfully",
+                            jobId,
+                            lens_orded_id: insertedLensId,
+                            frame_deduction
+                        });
+                    }
+                );
             });
-        });
-    });
+        }
+    );
 };
-
 
 // ✅ Get Job Details with customer + billing + temp_billing + frame + lens meta
 exports.getJobDetails = (req, res) => {
@@ -133,7 +172,7 @@ exports.getJobDetails = (req, res) => {
 
         // ===== Step 2: Billing =====
         const billingSql = `
-            SELECT bill_id, amount, bill_type, payment_method, bill_date, billed_by
+            SELECT bill_id, amount, bill_type, payment_method, bill_date, is_claimer_bill, billed_by
             FROM billing
             WHERE job_id = ?
             AND bill_type <> 'claim'
@@ -194,7 +233,8 @@ exports.getJobDetails = (req, res) => {
                             
                             lo.id   AS lens_order_id,
                             lo.order_company_name   AS lens_order_name,
-                
+                            lo.Telephone          AS lens_order_telephone,
+                            
                             l.lens_ordered_date
                             
                         FROM lens l
@@ -288,10 +328,12 @@ exports.getJobDetails = (req, res) => {
                                     total_price: job.netPrice,
                                     frame_price: job.frame_price,
                                     lens_price: job.lense_price,
+                                    discount: job.discount,
                                     billing_paid: billingTotal,
                                     temp_billing_paid: tempBillingTotal,
                                     total_paid: totalPaid,
-                                    due_amount: dueAmount
+                                    due_amount: dueAmount,
+                                    price: job.price
                                 },
 
                                 billing: billingRows,
@@ -847,191 +889,129 @@ exports.getFullJobDetails = (req, res) => {
 
 // add claimer
 exports.addClaimerToJob = (req, res) => {
-    const {
-        mode,
-        jobId,
-        claimerId,
-        name,
-        email,
-        mobile,
-        lan_number,
-        address,
-        nic,
-        age,
-        claim_status,
-        claim_fprice,
-        claim_lprice
-    } = req.body;
+    const { claimId, jobId } = req.body;
+    const userId = req.user?.user_id;
 
-    if (!mode || !jobId) {
+    if (!claimId || !jobId) {
         return res.status(400).json({
-            success: false,
-            message: "Mode and jobId are required."
+            message: "Claim ID and Job ID are required",
         });
     }
 
-    const billed_by = req.user?.user_id || null;
+    if (!userId) {
+        return res.status(401).json({
+            message: "Unauthorized",
+        });
+    }
 
-    // amount = fprice + lprice
-    const amount = (Number(claim_fprice) || 0) + (Number(claim_lprice) || 0);
+    /* 1️⃣ Update selected job (jobId) → is_claimer = 2 */
+    const updateJobSql = `
+        UPDATE job
+        SET is_claimer = 2
+        WHERE job_id = ?
+    `;
 
-    // Helper: Create billing entry after job update
-    const createBilling = (claimer_id_to_return) => {
-        const insertBill = `
-            INSERT INTO billing 
-            (job_id, amount, payment_method, bill_type, bill_date, payment_status, billed_by)
-            VALUES (?, ?, 'cash', 'claim', NOW(), 1, ?)
+    db.query(updateJobSql, [jobId], (err, result) => {
+        if (err) {
+            console.error("Update job error:", err);
+            return res.status(500).json({
+                message: "Failed to update job claimer status",
+            });
+        }
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                message: "Job not found",
+            });
+        }
+
+        /* 2️⃣ Select claim job → get due_amount */
+        const selectClaimJobSql = `
+            SELECT netPrice
+            FROM job
+            WHERE job_id = ?
+            LIMIT 1
         `;
 
-        db.query(insertBill, [jobId, amount, billed_by], (err2, billResult) => {
-            if (err2) {
-                console.error("Billing insert failed:", err2);
+        db.query(selectClaimJobSql, [claimId], (err, rows) => {
+            if (err) {
+                console.error("Select claim job error:", err);
                 return res.status(500).json({
-                    success: false,
-                    message: "Failed to create billing."
+                    message: "Failed to fetch claim job",
                 });
             }
 
-            return res.status(200).json({
-                success: true,
-                message: "Claimer updated & bill created successfully.",
-                claimer_id: claimer_id_to_return,
-                billId: billResult.insertId
-            });
-        });
-    };
+            if (rows.length === 0) {
+                return res.status(404).json({
+                    message: "Claim job not found",
+                });
+            }
 
-    // -----------------------------------------------------------
-    // MODE: NEW — insert customer then update job
-    // -----------------------------------------------------------
-    if (mode === "new") {
-        const insertCustomer = `
-            INSERT INTO customers
-            (name, email, mobile, lan_number, address, nic, age, create_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
-        `;
+            const netPrice = rows[0].netPrice;
 
-        db.query(
-            insertCustomer,
-            [name, email, mobile, lan_number, address, nic, age],
-            (err, customerResult) => {
-                if (err) {
-                    console.error("Customer insert failed:", err);
-                    return res.status(500).json({
-                        success: false,
-                        message: "Failed to create customer."
-                    });
-                }
+            /* 3️⃣ Create billing record */
+            const insertBillingSql = `
+                INSERT INTO billing (
+                    job_id,
+                    amount,
+                    payment_method,
+                    bill_type,
+                    bill_date,
+                    payment_status,
+                    is_claimer_bill,
+                    billed_by
+                ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?)
+            `;
 
-                const newClaimerId = customerResult.insertId;
+            db.query(
+                insertBillingSql,
+                [
+                    claimId,
+                    netPrice,
+                    "Cash",
+                    "Final Payment",
+                    1,
+                    1,
+                    userId,
+                ],
+                (err, billingResult) => {
+                    if (err) {
+                        console.error("Insert billing error:", err);
+                        return res.status(500).json({
+                            message: "Failed to create billing",
+                        });
+                    }
 
-                const updateJob = `
-                    UPDATE job
-                    SET 
-                        claim_id = ?, 
-                        claim_status = ?, 
-                        claim_fprice = ?, 
-                        claim_lprice = ?, 
-                        claim_date = NOW()
-                    WHERE job_id = ?
-                `;
+                    const billId = billingResult.insertId; // ✅ created bill number
 
-                db.query(
-                    updateJob,
-                    [newClaimerId, claim_status, claim_fprice, claim_lprice, jobId],
-                    (err2) => {
-                        if (err2) {
-                            console.error("Job update failed:", err2);
+                    /* 4️⃣ Update claim job → due_amount = 0, order_status = 3 */
+                    const updateClaimJobSql = `
+                        UPDATE job
+                        SET due_amount = 0,
+                            order_status = 3
+                        WHERE job_id = ?
+                    `;
+
+                    db.query(updateClaimJobSql, [claimId], (err) => {
+                        if (err) {
+                            console.error("Update claim job error:", err);
                             return res.status(500).json({
-                                success: false,
-                                message: "Failed to update job."
+                                message: "Failed to finalize claim job",
                             });
                         }
 
-                        // -------------------------------------------------
-                        // LOG ENTRY FOR CLAIM ADD (mode: new)
-                        // -------------------------------------------------
-                        const logSql = `
-                            INSERT INTO job_log (job_id, field_name, old_value, new_value, changed_by)
-                            VALUES (?, ?, ?, ?, ?)
-                        `;
-
-                        const logComment = `Claim added for job`;
-
-                        db.query(
-                            logSql,
-                            [jobId, "Claim add", "", logComment, billed_by],
-                            (logErr) => {
-                                if (logErr) {
-                                    console.error("Claim log insert failed:", logErr);
-                                }
-                            }
-                        );
-                        // -------------------------------------------------
-
-                        return createBilling(newClaimerId);
-                    }
-                );
-            }
-        );
-
-        return;
-    }
-
-    // -----------------------------------------------------------
-    // MODE: EXISTING — only update job
-    // -----------------------------------------------------------
-    if (mode === "existing") {
-        const updateJob = `
-            UPDATE job
-            SET 
-                claim_id = ?, 
-                claim_status = ?, 
-                claim_fprice = ?, 
-                claim_lprice = ?, 
-                claim_date = NOW()
-            WHERE job_id = ?
-        `;
-
-        db.query(
-            updateJob,
-            [claimerId, claim_status, claim_fprice, claim_lprice, jobId],
-            (err) => {
-                if (err) {
-                    console.error("Job update failed:", err);
-                    return res.status(500).json({
-                        success: false,
-                        message: "Failed to update job."
+                        /* ✅ SUCCESS */
+                        return res.status(200).json({
+                            claimId,
+                            bill_id: billId, // 👈 sent to frontend
+                            message: "Claimer added successfully",
+                        });
                     });
                 }
-
-                // -------------------------------------------------
-                // LOG ENTRY FOR CLAIM ADD (mode: existing)
-                // -------------------------------------------------
-                const logSql = `
-                    INSERT INTO job_log (job_id, field_name, old_value, new_value, changed_by)
-                    VALUES (?, ?, ?, ?, ?)
-                `;
-
-                const logComment = `Claim added for job`;
-
-                db.query(
-                    logSql,
-                    [jobId, "Claim add", "", logComment, billed_by],
-                    (logErr) => {
-                        if (logErr) {
-                            console.error("Claim log insert failed:", logErr);
-                        }
-                    }
-                );
-                // -------------------------------------------------
-
-                return createBilling(claimerId);
-            }
-        );
-    }
+            );
+        });
+    });
 };
-
 
 exports.getAllOpticalMasters = (req, res) => {
 
@@ -1074,9 +1054,415 @@ exports.getAllOpticalMasters = (req, res) => {
     });
 };
 
+// exports.getAllClaimJobs = (req, res) => {
+//     const { start_date, end_date, page = 1, limit = 10 } = req.query;
+//
+//     const offset = (parseInt(page) - 1) * parseInt(limit);
+//
+//     // ✅ Base SQL (main query)
+//     let sql = `
+//         SELECT
+//           j.job_id,
+//           j.order_status,
+//
+//           j.lens_status,
+//           j.frame_status,
+//           j.netPrice,
+//           j.due_amount,
+//           j.comment,
+//           j.create_date,
+//           j.due_date,
+//           c.cus_id,
+//           c.name AS customer_name,
+//           c.mobile AS customer_mobile,
+//           c.address AS customer_address
+//         FROM job j
+//         INNER JOIN customers c ON j.cus_id = c.cus_id
+//         WHERE j.order_status = 3 AND is_claimer = 1
+//     `;
+//
+//     // ✅ Count query (to get total)
+//     let countSql = `
+//         SELECT COUNT(*) AS total
+//         FROM job j
+//         WHERE j.order_status = 3 AND is_claimer = 1
+//     `;
+//
+//     const params = [];
+//     const countParams = [];
+//
+//     // ✅ Add date filters (for both queries)
+//     if (start_date && end_date) {
+//         sql += ` AND j.create_date BETWEEN ? AND ?`;
+//         countSql += ` AND j.create_date BETWEEN ? AND ?`;
+//         params.push(`${start_date} 00:00:00`, `${end_date} 23:59:59`);
+//         countParams.push(`${start_date} 00:00:00`, `${end_date} 23:59:59`);
+//     } else if (start_date) {
+//         sql += ` AND j.create_date >= ?`;
+//         countSql += ` AND j.create_date >= ?`;
+//         params.push(`${start_date} 00:00:00`);
+//         countParams.push(`${start_date} 00:00:00`);
+//     } else if (end_date) {
+//         sql += ` AND j.create_date <= ?`;
+//         countSql += ` AND j.create_date <= ?`;
+//         params.push(`${end_date} 23:59:59`);
+//         countParams.push(`${end_date} 23:59:59`);
+//     }
+//
+//     sql += ` ORDER BY j.create_date DESC LIMIT ? OFFSET ?`;
+//     params.push(parseInt(limit), offset);
+//
+//     // ✅ First: get total count
+//     db.query(countSql, countParams, (countErr, countResult) => {
+//         if (countErr) {
+//             console.error("Count query failed:", countErr);
+//             return res.status(500).json({ message: "Count query failed" });
+//         }
+//
+//         const total = countResult[0]?.total || 0;
+//         const totalPages = Math.ceil(total / limit);
+//
+//         // ✅ Then: fetch paginated data
+//         db.query(sql, params, (err, result) => {
+//             if (err) {
+//                 console.error("Job lookup failed:", err);
+//                 return res.status(500).json({ message: "Job lookup failed" });
+//             }
+//
+//             if (result.length === 0) {
+//                 return res.status(404).json({ message: "No jobs found for this order_status and date range" });
+//             }
+//
+//             const jobs = result.map(job => ({
+//                 job_id: job.job_id,
+//                 order_status: job.order_status,
+//
+//                 lens_status:job.lens_status,
+//                 frame_status:job.frame_status,
+//                 comment: job.comment,
+//                 netPrice: job.netPrice,
+//                 due_amount: job.due_amount,
+//                 create_date: job.create_date,
+//                 due_date: job.due_date,
+//                 customer: {
+//                     cus_id: job.cus_id,
+//                     name: job.customer_name,
+//                     mobile: job.customer_mobile,
+//                     address: job.customer_address
+//                 }
+//             }));
+//
+//             res.status(200).json({
+//                 total,
+//                 total_pages: totalPages,
+//                 current_page: parseInt(page),
+//                 limit: parseInt(limit),
+//                 jobs
+//             });
+//         });
+//     });
+// };
 
+// get all claim jobs
+exports.getAllClaimJobs = (req, res) => {
+    const { start_date, end_date, page = 1, limit = 10 } = req.query;
 
+    const parsedPage = parseInt(page);
+    const parsedLimit = parseInt(limit);
+    const offset = (parsedPage - 1) * parsedLimit;
 
+    // ================= BASE QUERY =================
+    let sql = `
+        SELECT
+            j.job_id,
+            j.order_status,
+            j.lens_status,
+            j.frame_status,
+            j.is_claimer,
+            j.netPrice,
+            j.due_amount,
+            j.comment,
+            j.create_date,
+            j.due_date,
+            c.cus_id,
+            c.name AS customer_name,
+            c.mobile AS customer_mobile,
+            c.address AS customer_address
+        FROM job j
+        INNER JOIN customers c ON j.cus_id = c.cus_id
+        WHERE j.order_status = 3
+          AND j.is_claimer IN (1, 2)
+    `;
+
+    let countSql = `
+        SELECT COUNT(*) AS total
+        FROM job j
+        WHERE j.order_status = 3
+          AND j.is_claimer IN (1, 2)
+    `;
+
+    const params = [];
+    const countParams = [];
+
+    // ================= DATE FILTERS =================
+    if (start_date && end_date) {
+        sql += ` AND j.create_date BETWEEN ? AND ?`;
+        countSql += ` AND j.create_date BETWEEN ? AND ?`;
+        params.push(`${start_date} 00:00:00`, `${end_date} 23:59:59`);
+        countParams.push(`${start_date} 00:00:00`, `${end_date} 23:59:59`);
+    } else if (start_date) {
+        sql += ` AND j.create_date >= ?`;
+        countSql += ` AND j.create_date >= ?`;
+        params.push(`${start_date} 00:00:00`);
+        countParams.push(`${start_date} 00:00:00`);
+    } else if (end_date) {
+        sql += ` AND j.create_date <= ?`;
+        countSql += ` AND j.create_date <= ?`;
+        params.push(`${end_date} 23:59:59`);
+        countParams.push(`${end_date} 23:59:59`);
+    }
+
+    // ================= PAGINATION =================
+    sql += ` ORDER BY j.create_date DESC LIMIT ? OFFSET ?`;
+    params.push(parsedLimit, offset);
+
+    // ================= COUNT QUERY =================
+    db.query(countSql, countParams, (countErr, countResult) => {
+        if (countErr) {
+            console.error("Count query failed:", countErr);
+            return res.status(500).json({ message: "Count query failed" });
+        }
+
+        const total = countResult[0]?.total || 0;
+        const totalPages = Math.ceil(total / parsedLimit);
+
+        // ================= DATA QUERY =================
+        db.query(sql, params, (err, result) => {
+            if (err) {
+                console.error("Job lookup failed:", err);
+                return res.status(500).json({ message: "Job lookup failed" });
+            }
+
+            const jobs = result.map(job => ({
+                job_id: job.job_id,
+                order_status: job.order_status,
+                lens_status: job.lens_status,
+                frame_status: job.frame_status,
+                is_claimer: job.is_claimer, // 👈 included
+                comment: job.comment,
+                netPrice: job.netPrice,
+                due_amount: job.due_amount,
+                create_date: job.create_date,
+                due_date: job.due_date,
+                customer: {
+                    cus_id: job.cus_id,
+                    name: job.customer_name,
+                    mobile: job.customer_mobile,
+                    address: job.customer_address
+                }
+            }));
+
+            res.status(200).json({
+                total,
+                total_pages: totalPages,
+                current_page: parsedPage,
+                limit: parsedLimit,
+                jobs
+            });
+        });
+    });
+};
+
+exports.verifyClimJobId = (req, res) => {
+    const { verifyId, jobNetPrice } = req.body;
+
+    // Basic validation
+    if (!verifyId || !jobNetPrice) {
+        return res.status(400).json({
+            message: "Job ID and Net Price are required",
+        });
+    }
+
+    const sql = `
+    SELECT 
+      job_id,
+      is_claimer,
+      order_status,
+      netPrice,
+      due_amount
+    FROM job
+    WHERE job_id = ?
+    LIMIT 1
+  `;
+
+    db.query(sql, [verifyId], (err, results) => {
+        if (err) {
+            console.error("DB error:", err);
+            return res.status(500).json({
+                message: "Database error while verifying job",
+            });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({
+                message: "Job not found",
+            });
+        }
+
+        const job = results[0];
+
+        /* 1️⃣ is_claimer check */
+        if (job.is_claimer !== 0) {
+            return res.status(400).json({
+                message: "This job can't add to claim because it's already claim active",
+            });
+        }
+
+        /* 2️⃣ order_status check */
+        if (job.order_status === 1) {
+            return res.status(400).json({
+                message: "Job must be Ready before add to claim",
+            });
+        }
+
+        if (job.order_status === 3) {
+            return res.status(400).json({
+                message: "This job is already completed",
+            });
+        }
+
+        if (job.order_status === 0) {
+            return res.status(400).json({
+                message: "This job has been canceled",
+            });
+        }
+
+        // Only order_status === 2 allowed
+        if (job.order_status !== 2) {
+            return res.status(400).json({
+                message: "Invalid job status",
+            });
+        }
+
+        /* 3️⃣ net price vs payload net price */
+        if (Number(job.netPrice) !== Number(jobNetPrice)) {
+            return res.status(400).json({
+                message: "Net price of claim job does not match",
+            });
+        }
+
+        /* 4️⃣ net price vs due amount */
+        if (Number(job.netPrice) !== Number(job.due_amount)) {
+            return res.status(400).json({
+                message: "Selected job net price and due amount does not match",
+            });
+        }
+
+        /* ✅ All checks passed */
+        return res.status(200).json({
+            job_id: job.job_id,
+            net_price: job.netPrice,
+            due_amount: job.due_amount,
+        });
+    });
+};
+
+exports.addSelfClaimJob = (req, res) => {
+    const { jobId } = req.params;
+    const userId = req.user?.user_id;
+
+    if (!jobId) {
+        return res.status(400).json({ message: "Job ID is required" });
+    }
+
+    if (!userId) {
+        return res.status(401).json({ message: "Unauthorized user" });
+    }
+
+    /**
+     * STEP 1: Select job and get netPrice
+     */
+    const selectJobQuery = `
+        SELECT netPrice
+        FROM job
+        WHERE job_id = ?
+        LIMIT 1
+    `;
+
+    db.query(selectJobQuery, [jobId], (err, jobResult) => {
+        if (err) {
+            console.error("Select job error:", err);
+            return res.status(500).json({ message: "Failed to fetch job" });
+        }
+
+        if (jobResult.length === 0) {
+            return res.status(404).json({ message: "Job not found" });
+        }
+
+        const netPrice = jobResult[0].netPrice;
+
+        /**
+         * STEP 2: Create billing record
+         */
+        const insertBillQuery = `
+            INSERT INTO billing (
+                job_id,
+                amount,
+                payment_method,
+                bill_type,
+                bill_date,
+                payment_status,
+                is_claimer_bill,
+                billed_by
+            )
+            VALUES (?, ?, ?, ?, NOW(), ?, ?, ?)
+        `;
+
+        const billValues = [
+            jobId,
+            netPrice,
+            "Cash",
+            "Final Payment",
+            1,
+            1,
+            userId
+        ];
+
+        db.query(insertBillQuery, billValues, (err, billResult) => {
+            if (err) {
+                console.error("Insert bill error:", err);
+                return res.status(500).json({ message: "Failed to create bill" });
+            }
+
+            const billId = billResult.insertId;
+
+            /**
+             * STEP 3: Update job is_claimer (1 → 2)
+             */
+            const updateJobQuery = `
+                UPDATE job
+                SET is_claimer = 2
+                WHERE job_id = ?
+            `;
+
+            db.query(updateJobQuery, [jobId], (err) => {
+                if (err) {
+                    console.error("Update job error:", err);
+                    return res.status(500).json({ message: "Failed to update job claimer status" });
+                }
+
+                /**
+                 * STEP 4: Send response
+                 */
+                return res.status(200).json({
+                    message: "Self claim processed successfully",
+                    claimId: jobId,
+                    bill_id: billId
+                });
+            });
+        });
+    });
+};
 
 
 
