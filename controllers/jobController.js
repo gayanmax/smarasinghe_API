@@ -202,11 +202,21 @@ exports.getJobDetails = (req, res) => {
                     if (!job.frame_id) return cb(null);
 
                     db.query(
-                        `SELECT frame_id FROM frame WHERE id = ?`,
+                        `
+                            SELECT 
+                                frame_id,
+                                frame_brand
+                            FROM frame
+                            WHERE id = ?
+                            `,
                         [job.frame_id],
                         (err, rows) => {
-                            if (err) return cb(null);
-                            cb(rows[0]?.frame_id || null);
+                            if (err || !rows.length) return cb(null);
+
+                            cb({
+                                frame_id: rows[0].frame_id,
+                                frame_brand: rows[0].frame_brand
+                            });
                         }
                     );
                 };
@@ -267,7 +277,7 @@ exports.getJobDetails = (req, res) => {
                 };
 
                 // ===== Execute lookups =====
-                getFrame((frameName) => {
+                getFrame((frame) => {
                     getLens((lensMeta) => {
                         getPrescriber((prescriber) => {
                             res.status(200).json({
@@ -296,7 +306,8 @@ exports.getJobDetails = (req, res) => {
 
                                 // --- frame ---
                                 frame_id: job.frame_id,
-                                frame_name: frameName, // ✅ added
+                                frame_name: frame?.frame_id || null,
+                                frame_brand: frame?.frame_brand || null,
                                 frame_status: job.frame_status,
                                 frame_material: job.frame_material,
                                 frame_category: job.frame_category,
@@ -534,6 +545,8 @@ exports.getAllJobsByOrderStatus = (req, res) => {
      
           j.lens_status,
           j.frame_status,
+          j.job_status,
+          j.is_claimer,
           j.netPrice,
           j.due_amount,
           j.comment,
@@ -606,6 +619,8 @@ exports.getAllJobsByOrderStatus = (req, res) => {
 
                 lens_status:job.lens_status,
                 frame_status:job.frame_status,
+                job_status:job.job_status,
+                is_claimer:job.is_claimer,
                 comment: job.comment,
                 netPrice: job.netPrice,
                 due_amount: job.due_amount,

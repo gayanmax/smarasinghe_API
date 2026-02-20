@@ -180,6 +180,52 @@ exports.getFrameById = (req, res) => {
 //     });
 // };
 
+exports.deleteFramePart = (req, res) => {
+    const { table_name, id } = req.body;
+
+    // ✅ Whitelist tables to prevent SQL injection
+    const allowedTables = [
+        'frame_brand',
+        'frame_bridgewidth',
+        'frame_color',
+        'frame_lenswidth',
+        'frame_templelength',
+        'frame_model'
+    ];
+
+    if (!allowedTables.includes(table_name)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid table name'
+        });
+    }
+
+    const sql = `DELETE FROM ${table_name} WHERE id = ?`;
+
+    db.query(sql, [id], (err, result) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).json({
+                success: false,
+                message: 'Database error'
+            });
+        }
+
+        // Optional: check if row actually existed
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Record not found'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Record deleted permanently'
+        });
+    });
+};
+
 // update each frame part table status
 exports.updateStatus = (req, res) => {
     const {table_name, id} = req.body;
@@ -236,29 +282,78 @@ exports.getFrameByBrand = (req, res) => {
 // ==========================
 // create new part for frame parts tables except frame_model
 exports.insertData = (req, res) => {
-    const {table_name, name} = req.body;
+    const { table_name, name } = req.body;
 
-    const allowedTables = ['frame_brand', 'frame_bridgewidth', 'frame_color', 'frame_lenswidth','frame_templelength'];
+    const allowedTables = [
+        'frame_brand',
+        'frame_bridgewidth',
+        'frame_color',
+        'frame_lenswidth',
+        'frame_templelength'
+    ];
+
+    // 1️⃣ Validate table name
     if (!allowedTables.includes(table_name)) {
-        return res.status(400).json({success: false, message: 'Invalid table name'});
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid table name'
+        });
     }
 
+    // 2️⃣ Validate name
     if (!name || name.trim() === '') {
-        return res.status(400).json({success: false, message: 'Name is required'});
+        return res.status(400).json({
+            success: false,
+            message: 'Name is required'
+        });
     }
 
-    const sql = `INSERT INTO ${table_name} (name, status) VALUES (?, 1)`;
+    const trimmedName = name.trim();
 
-    db.query(sql, [name], (err, result) => {
-        if (err) {
-            console.error('Insert error:', err);
-            return res.status(500).json({success: false, message: 'Database error'});
+    // 3️⃣ Check if already exists (case-insensitive)
+    const checkSql = `
+        SELECT id FROM ${table_name}
+        WHERE LOWER(name) = LOWER(?)
+        LIMIT 1
+    `;
+
+    db.query(checkSql, [trimmedName], (checkErr, checkResult) => {
+        if (checkErr) {
+            console.error('Check error:', checkErr);
+            return res.status(500).json({
+                success: false,
+                message: 'Database error'
+            });
         }
 
-        res.status(200).json({
-            success: true,
-            message: 'Data inserted successfully',
-            id: result.insertId
+        // If record exists → return already exists
+        if (checkResult.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Item already exists'
+            });
+        }
+
+        // 4️⃣ Insert if not exists
+        const insertSql = `
+            INSERT INTO ${table_name} (name, status)
+            VALUES (?, 1)
+        `;
+
+        db.query(insertSql, [trimmedName], (insertErr, result) => {
+            if (insertErr) {
+                console.error('Insert error:', insertErr);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Database error'
+                });
+            }
+
+            res.status(200).json({
+                success: true,
+                message: 'Data inserted successfully',
+                id: result.insertId
+            });
         });
     });
 };

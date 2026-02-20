@@ -45,51 +45,132 @@ exports.updateStatus = (req, res) => {
     });
 };
 
+// exports.insertData = (req, res) => {
+//     const { table_name, name } = req.body;
+//
+//     const allowedTables = ['lense_category', 'lense_type', 'lense_color', 'lense_size'];
+//     if (!allowedTables.includes(table_name)) {
+//         return res.status(400).json({ success: false, message: 'Invalid table name' });
+//     }
+//
+//     if (!name || name.trim() === '') {
+//         return res.status(400).json({ success: false, message: 'Name is required' });
+//     }
+//
+//     const sql = `INSERT INTO ${table_name} (name, status) VALUES (?, 1)`;
+//
+//     db.query(sql, [name], (err, result) => {
+//         if (err) {
+//             console.error('Insert error:', err);
+//             return res.status(500).json({ success: false, message: 'Database error' });
+//         }
+//
+//         res.status(200).json({
+//             success: true,
+//             message: 'Data inserted successfully',
+//             id: result.insertId
+//         });
+//     });
+// };
+
 exports.insertData = (req, res) => {
     const { table_name, name } = req.body;
 
-    const allowedTables = ['lense_category', 'lense_type', 'lense_color', 'lense_size'];
+    const allowedTables = [
+        'lense_category', 'lense_type', 'lense_color', 'lense_size'
+    ];
+
+    // 1️⃣ Validate table name
     if (!allowedTables.includes(table_name)) {
-        return res.status(400).json({ success: false, message: 'Invalid table name' });
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid table name'
+        });
     }
 
+    // 2️⃣ Validate name
     if (!name || name.trim() === '') {
-        return res.status(400).json({ success: false, message: 'Name is required' });
+        return res.status(400).json({
+            success: false,
+            message: 'Name is required'
+        });
     }
 
-    const sql = `INSERT INTO ${table_name} (name, status) VALUES (?, 1)`;
+    const trimmedName = name.trim();
 
-    db.query(sql, [name], (err, result) => {
-        if (err) {
-            console.error('Insert error:', err);
-            return res.status(500).json({ success: false, message: 'Database error' });
+    // 3️⃣ Check if already exists (case-insensitive)
+    const checkSql = `
+        SELECT id FROM ${table_name}
+        WHERE LOWER(name) = LOWER(?)
+        LIMIT 1
+    `;
+
+    db.query(checkSql, [trimmedName], (checkErr, checkResult) => {
+        if (checkErr) {
+            console.error('Check error:', checkErr);
+            return res.status(500).json({
+                success: false,
+                message: 'Database error'
+            });
         }
 
-        res.status(200).json({
-            success: true,
-            message: 'Data inserted successfully',
-            id: result.insertId
+        // If record exists → return already exists
+        if (checkResult.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Item already exists'
+            });
+        }
+
+        // 4️⃣ Insert if not exists
+        const insertSql = `
+            INSERT INTO ${table_name} (name, status)
+            VALUES (?, 1)
+        `;
+
+        db.query(insertSql, [trimmedName], (insertErr, result) => {
+            if (insertErr) {
+                console.error('Insert error:', insertErr);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Database error'
+                });
+            }
+
+            res.status(200).json({
+                success: true,
+                message: 'Data inserted successfully',
+                id: result.insertId
+            });
         });
     });
 };
 
 exports.getLensNames = async (req, res) => {
-    const lensFields = req.body;
-
-    // console.log("lensFields :",lensFields)
     try {
-        const promises = Object.entries(lensFields).map(async ([table, id]) => {
-            const [rows] = await db.promise().query(
-                `SELECT name FROM ?? WHERE id = ?`, [table, id]
-            );
-            return { [table]: rows[0]?.name || null };
-        });
+        const tables = [
+            "lense_category",
+            "lense_type",
+            "lense_size",
+            "lense_color"
+        ];
 
-        const results = await Promise.all(promises);
-        const response = Object.assign({}, ...results);
-        res.json(response);
+        const results = {};
+
+        for (const table of tables) {
+            const [rows] = await db.promise().query(
+                `SELECT * FROM ??`,
+                [table]
+            );
+
+            results[table] = rows;
+        }
+
+        res.status(200).json(results);
+
     } catch (error) {
-        res.status(500).json({ error: "Failed to fetch lens names" });
+        console.error("Error fetching lens data:", error);
+        res.status(500).json({ error: "Failed to fetch lens data" });
     }
 };
 
@@ -182,3 +263,46 @@ exports.deleteLensOrder = (req, res) => {
     });
 };
 
+exports.deleteLensPart = (req, res) => {
+    const { table_name, id } = req.body;
+
+    // ✅ Whitelist tables to prevent SQL injection
+    const allowedTables = [
+        'lense_category',
+        'lense_type',
+        'lense_size',
+        'lense_color'
+    ];
+
+    if (!allowedTables.includes(table_name)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid table name'
+        });
+    }
+
+    const sql = `DELETE FROM ${table_name} WHERE id = ?`;
+
+    db.query(sql, [id], (err, result) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).json({
+                success: false,
+                message: 'Database error'
+            });
+        }
+
+        // Optional: check if row actually existed
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Record not found'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Record deleted permanently'
+        });
+    });
+};
