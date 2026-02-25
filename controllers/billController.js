@@ -58,7 +58,7 @@ exports.createBilling = (req, res) => {
     const { job_id, amount, payment_method, bill_type, newTotal } = req.body;
     const billed_by = req.user?.user_id;
 
-    if (!job_id || !amount || isNaN(amount) || amount <= 0 || !bill_type || !billed_by) {
+    if (!job_id || !amount || isNaN(amount) || !bill_type || !billed_by) {
         return res.status(400).json({ message: "Invalid input data" });
     }
 
@@ -84,11 +84,11 @@ exports.createBilling = (req, res) => {
 
             const billingSql = `
                 INSERT INTO billing
-                (job_id, amount, payment_method, bill_type, bill_date, payment_status, billed_by)
-                VALUES (?, ?, ?, ?, NOW(), 1, ?)
+                (job_id, amount, due_amount, payment_method, bill_type, bill_date, payment_status, billed_by)
+                VALUES (?, ?, ?, ?, ?, NOW(), 1, ?)
             `;
 
-            db.query(billingSql, [job_id, amount, payment_method, bill_type, billed_by], (err2, result) => {
+            db.query(billingSql, [job_id, amount, newDue, payment_method, bill_type, billed_by], (err2, result) => {
                 if (err2) return res.status(500).json({ message: "Billing insert failed" });
 
                 db.query(`UPDATE job SET due_amount = ? WHERE job_id = ?`, [newDue, job_id]);
@@ -104,7 +104,7 @@ exports.createBilling = (req, res) => {
 
                 // 🔴 Final bill → recalc & insert into billing_deduction
                 const fetchBillsSql = `
-                        SELECT bill_id, bill_type, amount, payment_method, bill_date
+                        SELECT bill_id, bill_type, amount, due_amount, payment_method, bill_date
                         FROM billing
                         WHERE job_id = ?
                         ORDER BY bill_date ASC`;
@@ -117,6 +117,7 @@ exports.createBilling = (req, res) => {
                         bill_id: b.bill_id,
                         bill_type: b.bill_type,
                         amount: Number(b.amount),
+                        due_amount: Number(b.due_amount),
                         payment_method: b.payment_method,
                         bill_date: b.bill_date,
                         billed_by  }));
@@ -150,11 +151,11 @@ exports.createBilling = (req, res) => {
 
             const tempBillingSql = `
                 INSERT INTO temp_billing
-                (job_id, amount, payment_method, bill_type, bill_date, payment_status, billed_by)
-                VALUES (?, ?, ?, ?, NOW(), 1, ?)
+                (job_id, amount, due_amount, payment_method, bill_type, bill_date, payment_status, billed_by)
+                VALUES (?, ?, ?, ?, ?, NOW(), 1, ?)
             `;
 
-            db.query(tempBillingSql, [job_id, amount, payment_method, bill_type, billed_by], (err2, result) => {
+            db.query(tempBillingSql, [job_id, amount, newDue, payment_method, bill_type, billed_by], (err2, result) => {
                 if (err2) return res.status(500).json({ message: "Temp billing insert failed" });
 
                 db.query(`UPDATE job SET due_amount = ? WHERE job_id = ?`, [newDue, job_id]);
@@ -192,6 +193,7 @@ exports.getBillDetails = (req, res) => {
           SELECT 
             bill_id,
             amount,
+            due_amount,
             bill_type,
             bill_date,
             billed_by
@@ -218,6 +220,7 @@ exports.getBillDetails = (req, res) => {
                 billings: billingRows.map(b => ({
                     bill_id: b.bill_id,
                     amount: b.amount,
+                    due_amount:b.due_amount,
                     bill_type: b.bill_type,
                     bill_date: b.bill_date,
                     billed_by: b.billed_by

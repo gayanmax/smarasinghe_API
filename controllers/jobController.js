@@ -2,6 +2,143 @@ const db = require('../db');
 
 
 // ✅ Create Job with lens_orded insert
+// exports.createJob = (req, res) => {
+//     const {
+//         cus_id,
+//         r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
+//         l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
+//         pupil_distance, seg_h,
+//         prescribed_By_Id, comment, dm, htn, due_date,
+//         order_status,
+//         lens_id, lens_status,
+//         frame_id, frame_material, frame_category, frame_type, frame_status,
+//         frame_price,
+//         lens_category, lens_type, lens_color, lens_size, lens_ordered_by, lens_ordered_date,
+//         lense_price, price, discount, netPrice, is_claimer, due_amount,
+//     } = req.body;
+//
+//     const created_by = req.user?.user_id;
+//
+//     /* ---------------- STEP 1: INSERT LENS ---------------- */
+//     const lensSql = `
+//         INSERT INTO lens
+//         (lens_category, lens_type, lens_color, lens_size, lens_ordered_by, lens_ordered_date)
+//         VALUES (?, ?, ?, ?, ?, ?)
+//     `;
+//
+//     db.query(
+//         lensSql,
+//         [lens_category, lens_type, lens_color, lens_size, lens_ordered_by, lens_ordered_date],
+//         (lensErr, lensResult) => {
+//             if (lensErr) {
+//                 console.error("Lens insert failed:", lensErr);
+//                 return res.status(500).json({ message: "Lens insert failed" });
+//             }
+//
+//             const insertedLensId = lensResult.insertId;
+//
+//             /* ---------------- STEP 2: GET FRAME PRICES ---------------- */
+//             const frameSql = `
+//                 SELECT frame_selling_price, frame_discount_price
+//                 FROM frame
+//                 WHERE id = ?
+//             `;
+//
+//             db.query(frameSql, [frame_id], (frameErr, frameResult) => {
+//                 if (frameErr) {
+//                     console.error("Frame fetch failed:", frameErr);
+//                     return res.status(500).json({ message: "Frame fetch failed" });
+//                 }
+//
+//                 if (frameResult.length === 0) {
+//                     return res.status(404).json({ message: "Frame not found" });
+//                 }
+//
+//                 const {
+//                     frame_selling_price,
+//                     frame_discount_price
+//                 } = frameResult[0];
+//
+//                 // 🧮 Calculate frame deduction
+//                 const frame_deduction =
+//                     Number(frame_selling_price || 0) -
+//                     Number(frame_discount_price || 0);
+//
+//                 /* ---------------- STEP 3: INSERT JOB ---------------- */
+//                 const jobSql = `
+//                     INSERT INTO job (
+//                         cus_id,
+//                         r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
+//                         l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
+//                         pupil_distance, seg_h,
+//                         prescribed_By_Id, comment, dm, htn, due_date,
+//                         order_status, lens_id, lens_status,
+//                         frame_id, frame_material, frame_category, frame_type, frame_status,
+//                         frame_price, frame_deduction,
+//                         lense_price, price, discount, netPrice, is_claimer, due_amount,
+//                         create_date
+//                     ) VALUES (
+//                         ?,
+//                         ?, ?, ?, ?, ?, ?,
+//                         ?, ?, ?, ?, ?, ?,
+//                         ?, ?,
+//                         ?, ?, ?, ?, ?,
+//                         ?, ?, ?,
+//                         ?, ?, ?, ?, ?,
+//                         ?, ?,
+//                         ?, ?, ?, ?, ?, ?,
+//                         NOW()
+//                     )
+//                 `;
+//
+//                 db.query(
+//                     jobSql,
+//                     [
+//                         cus_id,
+//                         r_sph, r_cyl, r_axis, r_va, r_iol, r_add,
+//                         l_sph, l_cyl, l_axis, l_va, l_iol, l_add,
+//                         pupil_distance, seg_h,
+//                         prescribed_By_Id, comment, dm, htn, due_date,
+//                         order_status, insertedLensId, lens_status,
+//                         frame_id, frame_material, frame_category, frame_type, frame_status,
+//                         frame_price, frame_deduction,
+//                         lense_price, price, discount, netPrice, is_claimer, due_amount
+//                     ],
+//                     (jobErr, jobResult) => {
+//                         if (jobErr) {
+//                             console.error("Job insert failed:", jobErr);
+//                             return res.status(500).json({ message: "Job insert failed" });
+//                         }
+//
+//                         const jobId = jobResult.insertId;
+//
+//                         /* ---------------- STEP 4: JOB LOG ---------------- */
+//                         const logSql = `
+//                             INSERT INTO job_log
+//                             (job_id, field_name, old_value, new_value, changed_by)
+//                             VALUES (?, ?, ?, ?, ?)
+//                         `;
+//
+//                         db.query(
+//                             logSql,
+//                             [jobId, "Create new job", "", "Job created for customer", created_by || null],
+//                             () => {}
+//                         );
+//
+//                         /* ---------------- FINAL RESPONSE ---------------- */
+//                         res.status(201).json({
+//                             message: "Job created successfully",
+//                             jobId,
+//                             lens_orded_id: insertedLensId,
+//                             frame_deduction
+//                         });
+//                     }
+//                 );
+//             });
+//         }
+//     );
+// };
+
 exports.createJob = (req, res) => {
     const {
         cus_id,
@@ -37,32 +174,9 @@ exports.createJob = (req, res) => {
 
             const insertedLensId = lensResult.insertId;
 
-            /* ---------------- STEP 2: GET FRAME PRICES ---------------- */
-            const frameSql = `
-                SELECT frame_selling_price, frame_discount_price
-                FROM frame
-                WHERE id = ?
-            `;
+            /* ---------------- STEP 2: HANDLE FRAME ---------------- */
 
-            db.query(frameSql, [frame_id], (frameErr, frameResult) => {
-                if (frameErr) {
-                    console.error("Frame fetch failed:", frameErr);
-                    return res.status(500).json({ message: "Frame fetch failed" });
-                }
-
-                if (frameResult.length === 0) {
-                    return res.status(404).json({ message: "Frame not found" });
-                }
-
-                const {
-                    frame_selling_price,
-                    frame_discount_price
-                } = frameResult[0];
-
-                // 🧮 Calculate frame deduction
-                const frame_deduction =
-                    Number(frame_selling_price || 0) -
-                    Number(frame_discount_price || 0);
+            const insertJobWithFrameDeduction = (frame_deduction) => {
 
                 /* ---------------- STEP 3: INSERT JOB ---------------- */
                 const jobSql = `
@@ -134,7 +248,46 @@ exports.createJob = (req, res) => {
                         });
                     }
                 );
-            });
+            };
+
+            /* -------- CONDITION CHECK -------- */
+
+            if (Number(frame_id) === 0) {
+
+                // ✅ Own / Own Removed case
+                insertJobWithFrameDeduction(0);
+
+            } else {
+
+                // ✅ Normal frame case
+                const frameSql = `
+                    SELECT frame_selling_price, frame_discount_price
+                    FROM frame
+                    WHERE id = ?
+                `;
+
+                db.query(frameSql, [frame_id], (frameErr, frameResult) => {
+                    if (frameErr) {
+                        console.error("Frame fetch failed:", frameErr);
+                        return res.status(500).json({ message: "Frame fetch failed" });
+                    }
+
+                    if (frameResult.length === 0) {
+                        return res.status(404).json({ message: "Frame not found" });
+                    }
+
+                    const {
+                        frame_selling_price,
+                        frame_discount_price
+                    } = frameResult[0];
+
+                    const frame_deduction =
+                        Number(frame_selling_price || 0) -
+                        Number(frame_discount_price || 0);
+
+                    insertJobWithFrameDeduction(frame_deduction);
+                });
+            }
         }
     );
 };
@@ -172,7 +325,7 @@ exports.getJobDetails = (req, res) => {
 
         // ===== Step 2: Billing =====
         const billingSql = `
-            SELECT bill_id, amount, bill_type, payment_method, bill_date, is_claimer_bill, billed_by
+            SELECT bill_id, amount, due_amount, bill_type, payment_method, bill_date, is_claimer_bill, billed_by
             FROM billing
             WHERE job_id = ?
             AND bill_type <> 'claim'
@@ -180,7 +333,7 @@ exports.getJobDetails = (req, res) => {
         `;
 
         const tempBillingSql = `
-            SELECT bill_id, amount, bill_type, payment_method, bill_date, billed_by
+            SELECT bill_id, amount, due_amount, bill_type, payment_method, bill_date, billed_by
             FROM temp_billing
             WHERE job_id = ?
             ORDER BY bill_date ASC
@@ -664,6 +817,7 @@ exports.getJobsByCustomer = (req, res) => {
             order_status,
             create_date,
             frame_status,
+            job_status,
             lens_status,
             due_amount,
             price,
@@ -733,7 +887,7 @@ exports.getFullJobDetails = (req, res) => {
             // 2️⃣ BILLING
             // -----------------------------------------------------
             const billingSql = `
-                SELECT bill_id, amount, bill_type, payment_method, bill_date, billed_by
+                SELECT bill_id, amount, due_amount, bill_type, payment_method, bill_date, billed_by
                 FROM billing
                 WHERE job_id = ?
                 AND bill_type <> 'claim'
@@ -888,6 +1042,7 @@ exports.getFullJobDetails = (req, res) => {
                 billings: billingRows.map(b => ({
                     bill_id: b.bill_id,
                     amount: b.amount,
+                    due_amount: b.due_amount,
                     bill_type: b.bill_type,
                     bill_method: b.payment_method,
                     bill_date: b.bill_date,

@@ -2,6 +2,9 @@ const db = require("../db");
 
 exports.addExtraBilling = (req, res) => {
     const {
+        name,
+        contact,
+        address,
         item_name,
         amount,
         description,
@@ -53,12 +56,15 @@ exports.addExtraBilling = (req, res) => {
          */
         const extraSql = `
             INSERT INTO extra_billing
-            (bill_id, item_name, amount, description, payment_method, payment_by)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (bill_id, name, contact, address, item_name, amount, description, payment_method, payment_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const extraValues = [
             bill_id,
+            name,
+            contact,
+            address,
             item_name,
             amount,
             description || null,
@@ -159,7 +165,7 @@ exports.getAllExtraBilling = (req, res) => {
 };
 
 exports.removeExtraBilling = (req, res) => {
-    const id = req.params.id;;
+    const id = req.params.id;
 
     if (!id) {
         return res.status(400).json({
@@ -211,6 +217,9 @@ exports.getExtraBillingById = (req, res) => {
         SELECT 
             eb.id, 
             eb.bill_id, 
+            eb.name,
+            eb.contact,
+            eb.address,
             eb.item_name, 
             eb.description, 
             eb.amount, 
