@@ -292,6 +292,199 @@ exports.createJob = (req, res) => {
     );
 };
 
+exports.updateJobDetails = (req, res) => {
+    const job_id = req.params.job_id;
+    const data = req.body;
+
+    db.getConnection((err, connection) => {
+        if (err) {
+            return res.status(500).json({message: "Connection error"});
+        }
+
+        connection.beginTransaction((err) => {
+        if (err) {
+            return res.status(500).json({ message: "Transaction error" });
+        }
+
+        /* -------------------------------------------------- */
+        /* 1️⃣ CHECK ORDER STATUS                             */
+        /* -------------------------------------------------- */
+            connection.query(
+            "SELECT order_status FROM job WHERE job_id = ?",
+            [job_id],
+            (err, statusResult) => {
+                if (err) {
+                    return connection.rollback(() => {
+                        res.status(500).json({ message: "DB error" });
+                    });
+                }
+
+                if (statusResult.length === 0) {
+                    return connection.rollback(() => {
+                        res.status(404).json({ message: "Job not found" });
+                    });
+                }
+
+                const orderStatus = statusResult[0].order_status;
+
+                if (orderStatus === 3 || orderStatus === 0) {
+                    return connection.rollback(() => {
+                        res.status(400).json({
+                            message: "This job can't change"
+                        });
+                    });
+                }
+
+                /* -------------------------------------------------- */
+                /* 2️⃣ UPDATE LENS TABLE                              */
+                /* -------------------------------------------------- */
+                connection.query(
+                    `UPDATE lens 
+                     SET lens_category = ?, 
+                         lens_type = ?, 
+                         lens_color = ?, 
+                         lens_size = ?, 
+                         lens_ordered_by = ?
+                     WHERE lens_id = ?`,
+                    [
+                        data.lens_category,
+                        data.lens_type,
+                        data.lens_color,
+                        data.lens_size,
+                        data.lens_ordered_by,
+                        data.lens_id
+                    ],
+                    (err) => {
+                        if (err) {
+                            return connection.rollback(() => {
+                                res.status(500).json({ message: "Lens update failed" });
+                            });
+                        }
+
+                        /* -------------------------------------------------- */
+                        /* 3️⃣ GET CURRENT JOB                               */
+                        /* -------------------------------------------------- */
+                        connection.query(
+                            "SELECT frame_id, netPrice, due_amount, frame_deduction FROM job WHERE job_id = ?",
+                            [job_id],
+                            (err, jobResult) => {
+                                if (err) {
+                                    return connection.rollback(() => {
+                                        res.status(500).json({ message: "Job fetch error" });
+                                    });
+                                }
+
+                                const oldJob = jobResult[0];
+
+                                let frameDeduction = oldJob.frame_deduction;
+                                let newDueAmount = oldJob.due_amount;
+
+                                /* -------------------------------------------------- */
+                                /* 4️⃣ FRAME CHECK (SEPARATE LOGIC)                 */
+                                /* -------------------------------------------------- */
+
+                                const handleNetPriceLogic = () => {
+
+                                    /* -------------------------------------------------- */
+                                    /* 5️⃣ NET PRICE CHECK (SEPARATE LOGIC)             */
+                                    /* -------------------------------------------------- */
+
+                                    const oldNet = Number(oldJob.netPrice);
+                                    const newNet = Number(data.netPrice);
+
+                                    if (newNet > oldNet) {
+                                        const difference = newNet - oldNet;
+                                        newDueAmount = Number(oldJob.due_amount) + difference;
+                                    }
+
+                                    /* -------------------------------------------------- */
+                                    /* 6️⃣ UPDATE JOB TABLE                             */
+                                    /* -------------------------------------------------- */
+
+                                    connection.query(
+                                        `UPDATE job SET
+                                            r_sph=?, r_cyl=?, r_axis=?, r_va=?, r_iol=?, r_add=?,
+                                            l_sph=?, l_cyl=?, l_axis=?, l_va=?, l_iol=?, l_add=?,
+                                            pupil_distance=?, seg_h=?,
+                                            prescribed_By_Id=?, comment=?, dm=?, htn=?, due_date=?,
+                                            frame_id=?, frame_material=?, frame_type=?,
+                                            frame_price=?, frame_deduction=?,
+                                            lense_price=?, price=?, discount=?, netPrice=?, due_amount=?
+                                         WHERE job_id=?`,
+                                        [
+                                            data.r_sph, data.r_cyl, data.r_axis, data.r_va, data.r_iol, data.r_add,
+                                            data.l_sph, data.l_cyl, data.l_axis, data.l_va, data.l_iol, data.l_add,
+                                            data.pupil_distance, data.seg_h,
+                                            data.prescribed_By_Id, data.comment,
+                                            data.dm, data.htn, data.due_date,
+                                            data.frame_id, data.frame_material, data.frame_type,
+                                            data.frame_price, frameDeduction,
+                                            data.lense_price, data.price, data.discount,
+                                            data.netPrice, newDueAmount,
+                                            job_id
+                                        ],
+                                        (err) => {
+                                            if (err) {
+                                                return connection.rollback(() => {
+                                                    res.status(500).json({ message: "Job update failed" });
+                                                });
+                                            }
+
+                                            connection.commit((err) => {
+                                                if (err) {
+                                                    return connection.rollback(() => {
+                                                        res.status(500).json({ message: "Commit failed" });
+                                                    });
+                                                }
+
+                                                res.status(200).json({
+                                                    message: "Job updated successfully"
+                                                });
+                                            });
+                                        }
+                                    );
+                                };
+
+                                // FRAME CHECK LOGIC
+                                if (oldJob.frame_id !== data.frame_id && data.frame_id !== 0) {
+
+                                    connection.query(
+                                        `SELECT frame_selling_price, frame_discount_price
+                                         FROM frame
+                                         WHERE id = ?`,
+                                        [data.frame_id],
+                                        (err, frameResult) => {
+                                            if (err) {
+                                                return connection.rollback(() => {
+                                                    res.status(500).json({ message: "Frame fetch error" });
+                                                });
+                                            }
+
+                                            if (frameResult.length > 0) {
+                                                const selling = frameResult[0].frame_selling_price || 0;
+                                                const discount = frameResult[0].frame_discount_price || 0;
+
+                                                frameDeduction = selling - discount;
+                                            }
+
+                                            handleNetPriceLogic();
+                                        }
+                                    );
+
+                                } else {
+                                    handleNetPriceLogic();
+                                }
+
+                            }
+                        );
+                    }
+                );
+            }
+        );
+    });
+    });
+};
+
 // ✅ Get Job Details with customer + billing + temp_billing + frame + lens meta
 exports.getJobDetails = (req, res) => {
     const { job_id } = req.params;
@@ -1196,11 +1389,6 @@ exports.getAllOpticalMasters = (req, res) => {
         prescribed: 'SELECT prescribed_By_Id, prescribed_By_name FROM prescribedby ORDER BY prescribed_By_Id DESC',
 
         job_last_id: 'SELECT job_id FROM job ORDER BY job_id DESC LIMIT 1'
-        // frame_bridgewidth: 'SELECT id, bridgewidth FROM frame_bridgewidth WHERE status = 1',
-        // frame_color: 'SELECT id, name FROM frame_color WHERE status = 1',
-        // frame_lenswidth: 'SELECT id, Lenswidth FROM frame_lenswidth WHERE status = 1',
-        // frame_model: 'SELECT id, model_code,frame_brand_id FROM frame_model WHERE status = 1',
-        // frame_templelength: 'SELECT id, templelength FROM frame_templelength WHERE status = 1'
     };
 
     const result = {};

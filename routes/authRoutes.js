@@ -33,6 +33,7 @@ router.post('/create-job', authMiddleware, jobController.createJob);
 router.get('/jobs/:job_id',authMiddleware, jobController.getJobDetails);
 router.get('/full-job/:job_id',authMiddleware, jobController.getFullJobDetails);
 router.put('/jobs/:job_id', authMiddleware, jobController.updateJob);
+router.put('/job-update/:job_id', authMiddleware, jobController.updateJobDetails);
 router.get('/jobs/:job_id/logs', authMiddleware, jobController.getJobLogs);
 router.get('/jobs/get-all-jobs/:order_status', authMiddleware, jobController.getAllJobsByOrderStatus);
 router.get('/jobs/get-jobs/:cus_id', authMiddleware, jobController.getJobsByCustomer);
@@ -96,5 +97,6 @@ router.get('/get-extra-by-id/:id', authMiddleware, extraBillingController.getExt
 router.put('/remove-extra-billing/:id',authMiddleware, extraBillingController.removeExtraBilling);
 
 router.post('/get-report-data', authMiddleware, reportController.getReportData);
+router.post('/report-log', authMiddleware, reportController.createReportLog);
 
 module.exports = router;

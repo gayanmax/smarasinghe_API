@@ -25,8 +25,16 @@ exports.getReportData = (req, res) => {
 
 // ----------- DAILY -----------
     if (method === "daily") {
-        const today = formatDate(new Date());
+
+        // ✅ Use selected date from frontend
+        const selectedDate = req.body.date
+            ? formatDate(new Date(req.body.date))
+            : formatDate(new Date()); // fallback to today
+
         const result = {};
+
+        // include date in response
+        result.date = selectedDate;
 
         // 1) bills (exclude claims)
         const billsSQL = `
@@ -39,36 +47,42 @@ exports.getReportData = (req, res) => {
         AND billing.bill_type != 'claim'
     `;
 
-        runQuery(billsSQL, [today], (err, bills) => {
+        runQuery(billsSQL, [selectedDate], (err, bills) => {
             if (err) return res.status(500).json({ message: "DB error bills" });
 
             result.bills = bills;
             result.bill_count = bills.length;
 
             // total billing amount
-            result.total_billing_amount = bills.reduce((sum, bill) => sum + parseFloat(bill.amount || 0), 0);
+            result.billing_total = bills.reduce(
+                (sum, bill) => sum + parseFloat(bill.amount || 0),
+                0
+            );
 
             // 2) expenses
             const expSQL = `
-                SELECT SQL_CALC_FOUND_ROWS
-                d.expenses_id,
-                    d.amount,
-                    d.reason,
-                    u.user_name AS expenses_by
-                FROM daily_expenses d
-                LEFT JOIN users u
-                ON d.expenses_by = u.user_id
-                WHERE DATE(date_time) = ?
-            `;
+            SELECT SQL_CALC_FOUND_ROWS
+            d.expenses_id,
+            d.amount,
+            d.reason,
+            u.user_name AS expenses_by
+            FROM daily_expenses d
+            LEFT JOIN users u
+            ON d.expenses_by = u.user_id
+            WHERE DATE(date_time) = ?
+        `;
 
-            runQuery(expSQL, [today], (err2, expenses) => {
+            runQuery(expSQL, [selectedDate], (err2, expenses) => {
                 if (err2) return res.status(500).json({ message: "DB error expenses" });
 
                 result.expenses = expenses;
                 result.expense_count = expenses.length;
 
                 // total expenses amount
-                result.total_expenses_amount = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+                result.expenses_total = expenses.reduce(
+                    (sum, exp) => sum + parseFloat(exp.amount || 0),
+                    0
+                );
 
                 // 3) job count
                 const jobSQL = `
@@ -77,7 +91,7 @@ exports.getReportData = (req, res) => {
                 WHERE DATE(create_date) = ?
             `;
 
-                runQuery(jobSQL, [today], (err3, jobRows) => {
+                runQuery(jobSQL, [selectedDate], (err3, jobRows) => {
                     if (err3) return res.status(500).json({ message: "DB error jobs" });
 
                     result.jobs_created_today = jobRows[0].job_count;
@@ -89,7 +103,7 @@ exports.getReportData = (req, res) => {
                     WHERE DATE(create_date) = ?
                 `;
 
-                    runQuery(custSQL, [today], (err4, custRows) => {
+                    runQuery(custSQL, [selectedDate], (err4, custRows) => {
                         if (err4) return res.status(500).json({ message: "DB error customers" });
 
                         result.customers_created_today = custRows[0].customer_count;
@@ -134,7 +148,7 @@ exports.getReportData = (req, res) => {
             billRows.forEach(r => total += r.total || 0);
 
             result.billing_total = total;
-            result.billing_per_day = billRows;
+            result.bills = billRows;
 
             // expenses
             const expSQL = `
@@ -151,7 +165,7 @@ exports.getReportData = (req, res) => {
                 expRows.forEach(r => total2 += r.total || 0);
 
                 result.expenses_total = total2;
-                result.expenses_per_day = expRows;
+                result.expenses = expRows;
 
                 // customers
                 const custSQL = `
@@ -219,7 +233,7 @@ exports.getReportData = (req, res) => {
             billRows.forEach(r => total += r.total || 0);
 
             result.billing_total = total;
-            result.billing_per_day = billRows;
+            result.bills = billRows;
 
             const expSQL = `
                 SELECT DATE(date_time) AS day, SUM(amount) AS total
@@ -235,7 +249,7 @@ exports.getReportData = (req, res) => {
                 expRows.forEach(r => total2 += r.total || 0);
 
                 result.expenses_total = total2;
-                result.expenses_per_day = expRows;
+                result.expenses = expRows;
 
                 // customers
                 const custSQL = `
@@ -300,7 +314,7 @@ exports.getReportData = (req, res) => {
             billRows.forEach(r => total += r.total || 0);
 
             result.billing_total = total;
-            result.billing_per_month = billRows;
+            result.bills = billRows;
 
             const expSQL = `
                 SELECT MONTH(date_time) AS month, SUM(amount) AS total
@@ -316,7 +330,7 @@ exports.getReportData = (req, res) => {
                 expRows.forEach(r => total2 += r.total || 0);
 
                 result.expenses_total = total2;
-                result.expenses_per_month = expRows;
+                result.expenses = expRows;
 
                 // customers
                 const custSQL = `
@@ -354,4 +368,37 @@ exports.getReportData = (req, res) => {
     }
 
     return res.status(400).json({ message: "Invalid method" });
+};
+
+
+exports.createReportLog = (req, res) => {
+
+    const created_by = req.user?.user_id;
+    const { type, range } = req.body;
+
+    // Basic validation
+    if (!created_by) {
+        return res.status(401).json({ message: "Unauthorized user" });
+    }
+
+    if (!type || !range) {
+        return res.status(400).json({ message: "Report type and range are required" });
+    }
+
+    const sql = `
+        INSERT INTO reports (create_date, created_by, report_range, report_type)
+        VALUES (NOW(), ?, ?, ?)
+    `;
+
+    db.query(sql, [created_by, range, type], (err, result) => {
+        if (err) {
+            console.error("Report log insert error:", err);
+            return res.status(500).json({ message: "Database error" });
+        }
+
+        return res.status(201).json({
+            message: "Report log created successfully",
+            report_id: result.insertId
+        });
+    });
 };
