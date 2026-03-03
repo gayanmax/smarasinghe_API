@@ -5,25 +5,32 @@ exports.addExtraBilling = (req, res) => {
         name,
         contact,
         address,
-        item_name,
-        amount,
-        description,
+        items,
+        total_amount,
         payment_method
     } = req.body;
 
     const userId = req.user?.user_id || null;
 
-    // basic validation
-    if (!item_name || amount == null || !payment_method) {
+    // ==========================
+    // BASIC VALIDATION
+    // ==========================
+    if (
+        !items ||
+        !Array.isArray(items) ||
+        items.length === 0 ||
+        total_amount == null ||
+        !payment_method
+    ) {
         return res.status(400).json({
             success: false,
             message: "Missing required fields"
         });
     }
 
-    /**
-     * STEP 1: Create bill in billing table
-     */
+    // ==========================
+    // STEP 1: INSERT INTO BILLING
+    // ==========================
     const billSql = `
         INSERT INTO billing 
         (job_id, amount, payment_method, bill_type, bill_date, payment_status, is_claimer_bill, billed_by)
@@ -31,12 +38,12 @@ exports.addExtraBilling = (req, res) => {
     `;
 
     const billValues = [
-        0,                    // job_id
-        amount,
+        0,                      // job_id
+        total_amount,           // FULL GRAND TOTAL
         payment_method,
         "Extra Payment",
-        1,                    // payment_status
-        0,                    // is_claimer_bill
+        1,                      // payment_status
+        0,                      // is_claimer_bill
         userId
     ];
 
@@ -51,41 +58,43 @@ exports.addExtraBilling = (req, res) => {
 
         const bill_id = billResult.insertId;
 
-        /**
-         * STEP 2: Create extra billing linked to bill_id
-         */
+        // ==========================
+        // STEP 2: INSERT MULTIPLE ITEMS INTO extra_billing
+        // ==========================
+
         const extraSql = `
             INSERT INTO extra_billing
-            (bill_id, name, contact, address, item_name, amount, description, payment_method, payment_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (bill_id, name, contact, address, item_name, amount, quantity, total, payment_by)
+            VALUES ?
         `;
 
-        const extraValues = [
+        // Build bulk insert array
+        const extraValues = items.map(item => [
             bill_id,
             name,
             contact,
             address,
-            item_name,
-            amount,
-            description || null,
-            payment_method,
+            item.item_name,
+            item.amount,
+            item.quantity || 1,
+            item.row_total,     // each row total
             userId
-        ];
+        ]);
 
-        db.query(extraSql, extraValues, (extraErr, extraResult) => {
+        db.query(extraSql, [extraValues], (extraErr, extraResult) => {
             if (extraErr) {
                 console.error("Extra billing insert error:", extraErr);
                 return res.status(500).json({
                     success: false,
-                    message: "Failed to add extra billing"
+                    message: "Failed to add extra billing items"
                 });
             }
 
             return res.status(201).json({
                 success: true,
                 message: "Extra billing added successfully",
-                bill_id,
-                extra_billing_id: extraResult.insertId
+                bill_id: bill_id,
+                items_inserted: extraResult.affectedRows
             });
         });
     });
@@ -204,54 +213,81 @@ exports.removeExtraBilling = (req, res) => {
 };
 
 exports.getExtraBillingById = (req, res) => {
-    const id = req.params.id;
+    const billId = req.params.id;
 
-    if (!id) {
+    if (!billId) {
         return res.status(400).json({
             success: false,
-            message: "Extra billing id is required"
+            message: "Bill ID is required"
         });
     }
 
-    const sql = `
+    // ==========================
+    // STEP 1: Get bill data from billing table
+    // ==========================
+    const billSql = `
         SELECT 
-            eb.id, 
-            eb.bill_id, 
-            eb.name,
-            eb.contact,
-            eb.address,
-            eb.item_name, 
-            eb.description, 
-            eb.amount, 
-            eb.payment_method,
-            b.bill_type,
-            b.bill_date,
-            b.billed_by
-        FROM extra_billing eb
-        LEFT JOIN billing b ON eb.bill_id = b.bill_id
-        WHERE eb.id = ? 
-        AND eb.status = 1
+            bill_id,
+            amount,
+            payment_method,
+            bill_type,
+            bill_date
+        FROM billing
+        WHERE bill_id = ? 
+        LIMIT 1
     `;
 
-    db.query(sql, [id], (err, results) => {
-        if (err) {
-            console.error("DB Error (getExtraBillingById):", err);
+    db.query(billSql, [billId], (billErr, billResults) => {
+        if (billErr) {
+            console.error("DB Error (getExtraBillingById - billing):", billErr);
             return res.status(500).json({
                 success: false,
-                message: "Database error"
+                message: "Database error fetching bill"
             });
         }
 
-        if (!results || results.length === 0) {
+        if (!billResults || billResults.length === 0) {
             return res.status(404).json({
                 success: false,
-                message: "Extra billing not found"
+                message: "Billing record not found"
             });
         }
 
-        return res.status(200).json({
-            success: true,
-            data: results[0]
+        const billData = billResults[0];
+
+        // ==========================
+        // STEP 2: Get all items for this bill from extra_billing
+        // ==========================
+        const itemsSql = `
+            SELECT 
+                id,
+                item_name,
+                amount,
+                quantity,
+                total,
+                name,
+                contact,
+                address
+            FROM extra_billing
+            WHERE bill_id = ? 
+        `;
+
+        db.query(itemsSql, [billId], (itemsErr, itemsResults) => {
+            if (itemsErr) {
+                console.error("DB Error (getExtraBillingById - items):", itemsErr);
+                return res.status(500).json({
+                    success: false,
+                    message: "Database error fetching items"
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                data: {
+                    bill: billData,
+                    items: itemsResults || []
+                }
+            });
         });
     });
 };

@@ -48,6 +48,7 @@ router.get('/billing-details/:job_id', authMiddleware, billController.getBillDet
 router.get('/billing', authMiddleware,billController.getAllBillData);
 router.post('/print-bill-by-id', authMiddleware,billController.getPrintBilling);
 router.get("/get-diduction-billing", authMiddleware, billController.getDeductionBilling);
+router.post("/bill-deduct-verification", authMiddleware, billController.verifyBillDeduction);
 
 router.get('/get-lens-details', authMiddleware, lensController.getLensCategory);
 router.post('/update-lens-status', authMiddleware, lensController.updateStatus);
@@ -98,5 +99,6 @@ router.put('/remove-extra-billing/:id',authMiddleware, extraBillingController.re
 
 router.post('/get-report-data', authMiddleware, reportController.getReportData);
 router.post('/report-log', authMiddleware, reportController.createReportLog);
+router.post('/get-deducted-report-data', authMiddleware, reportController.getDeductReport);
 
 module.exports = router;

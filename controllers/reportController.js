@@ -402,3 +402,125 @@ exports.createReportLog = (req, res) => {
         });
     });
 };
+
+exports.getDeductReport = (req, res) => {
+    const { fromDate, toDate, mode } = req.body;
+
+    if (!fromDate || !toDate) {
+        return res.status(400).json({ message: "fromDate and toDate are required." });
+    }
+
+    const billsQuery = `
+        SELECT bill_id, job_id, amount, payment_method, bill_date, payment_status, bill_type
+        FROM billing
+        WHERE DATE(bill_date) BETWEEN ? AND ?
+    `;
+
+    db.query(billsQuery, [fromDate, toDate], (err, bills) => {
+        if (err) {
+            return res.status(500).json({ message: "Database error while fetching bills." });
+        }
+
+        // ================= NORMAL =================
+        if (mode === "normal") {
+
+            let totalAmount = 0;
+            bills.forEach(b => totalAmount += Number(b.amount));
+
+            return res.json({
+                range: { fromDate, toDate },
+                bills: bills.map(b => ({
+                    bill_id: b.bill_id,
+                    job_id: b.job_id,
+                    amount: b.amount,
+                    payment_method: b.payment_method,
+                    bill_type: b.bill_type,
+                    bill_date: b.bill_date
+                })),
+                total_amount: totalAmount,
+                bill_count: bills.length
+            });
+
+        }
+        // ================= DEDUCTED =================
+        else if (mode === "deducted") {
+
+            // Get bill IDs where payment_status = 2
+            const billIdsToCheck = bills
+                .filter(b => b.payment_status === 2)
+                .map(b => b.bill_id);
+
+            // If no deducted bills, just return normal bills
+            if (billIdsToCheck.length === 0) {
+
+                let totalAmount = 0;
+                bills.forEach(b => totalAmount += Number(b.amount));
+
+                return res.json({
+                    range: { fromDate, toDate },
+                    bills: bills.map(b => ({
+                        bill_id: b.bill_id,
+                        job_id: b.job_id,
+                        amount: b.amount,
+                        payment_method: b.payment_method,
+                        bill_type: b.bill_type,
+                        bill_date: b.bill_date
+                    })),
+                    total_amount: totalAmount,
+                    bill_count: bills.length
+                });
+            }
+
+            const deductionQuery = `
+                SELECT bill_id, amount
+                FROM billing_deduction
+                WHERE bill_id IN (?)
+            `;
+
+            db.query(deductionQuery, [billIdsToCheck], (err2, deductions) => {
+                if (err2) {
+                    return res.status(500).json({ message: "Database error while fetching deductions." });
+                }
+
+                // Create map of deducted amounts
+                const deductionMap = {};
+                deductions.forEach(d => {
+                    deductionMap[d.bill_id] = Number(d.amount);
+                });
+
+                let totalAmount = 0;
+
+                const finalBills = bills.map(b => {
+
+                    let finalAmount = Number(b.amount);
+
+                    // If payment_status === 2 and deduction exists → replace amount
+                    if (b.payment_status === 2 && deductionMap[b.bill_id] !== undefined) {
+                        finalAmount = deductionMap[b.bill_id];
+                    }
+
+                    totalAmount += finalAmount;
+
+                    return {
+                        bill_id: b.bill_id,
+                        job_id: b.job_id,
+                        amount: finalAmount,
+                        payment_method: b.payment_method,
+                        bill_type: b.bill_type,
+                        bill_date: b.bill_date
+                    };
+                });
+
+                return res.json({
+                    range: { fromDate, toDate },
+                    bills: finalBills,
+                    total_amount: totalAmount,
+                    bill_count: finalBills.length
+                });
+            });
+        }
+        else {
+            return res.status(400).json({ message: "Invalid mode. Use 'normal' or 'deducted'." });
+        }
+    });
+};

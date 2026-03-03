@@ -1351,7 +1351,8 @@ exports.addClaimerToJob = (req, res) => {
                     const updateClaimJobSql = `
                         UPDATE job
                         SET due_amount = 0,
-                            order_status = 3
+                            order_status = 3,
+                            is_claimer = 4
                         WHERE job_id = ?
                     `;
 

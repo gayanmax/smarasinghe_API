@@ -29,25 +29,37 @@ function recalculatePaymentsRandom50(payments, newTotal) {
 
 // Helper: insert into billing_deduction table
 function insertBillingDeductions(job_id, recalculatedPayments, db, callback) {
+
     const sql = `
         INSERT INTO billing_deduction
-        (bill_id, job_id, amount, payment_method, bill_type, bill_date, payment_status, is_claimer_bill, billed_by)
+        (bill_id, job_id, amount, due_amount, payment_method, bill_type, bill_date, payment_status, is_claimer_bill, billed_by)
         VALUES ?`;
 
-    const values = recalculatedPayments.newPayments.map(p => ([
-        p.bill_id,
-        job_id,
-        p.newAmount,
-        p.payment_method,
-        p.bill_type,
-        p.bill_date,
-        1,
-        0,
-        p.billed_by
-    ]));
+    let runningTotal = 0;
+    const finalTotal = recalculatedPayments.newTotal;
 
-    console.log("call back :",callback)
+    const values = recalculatedPayments.newPayments.map(p => {
+
+        runningTotal += p.newAmount;
+
+        const dueAmountForThisBill = finalTotal - runningTotal;
+
+        return [
+            p.bill_id,
+            job_id,
+            p.newAmount,
+            dueAmountForThisBill < 0 ? 0 : dueAmountForThisBill, // safety
+            p.payment_method,
+            p.bill_type,
+            p.bill_date,
+            1,
+            0,
+            p.billed_by
+        ];
+    });
+
     console.log("Billing deduction values:", values);
+
     db.query(sql, [values], callback);
 }
 
@@ -352,7 +364,7 @@ exports.getPrintBilling = (req, res) => {
 };
 
 // get bill data form deduction for bulk print
-exports.getDeductionBilling = async (req, res) => {
+exports.getDeductionBilling = (req, res) => {
     const { fromDate, toDate } = req.query;
 
     if (!fromDate || !toDate) {
@@ -361,20 +373,14 @@ exports.getDeductionBilling = async (req, res) => {
         });
     }
 
-    const sql = `
+    // 1️⃣ Get selected jobs + customers
+    const jobSQL = `
         SELECT 
-            bd.bill_id,
-            bd.job_id,
-            bd.amount,
-            bd.payment_method,
-            bd.bill_type,
-            bd.bill_date,
-
+            j.job_id,
             j.cus_id,
             COALESCE(j.netPrice, 0) AS netPrice,
             COALESCE(j.frame_deduction, 0) AS frame_deduction,
-            COALESCE(j.due_amount, 0) AS due_amount,
-            (COALESCE(j.netPrice, 0) - COALESCE(j.frame_deduction, 0)) AS total_price,
+            COALESCE(j.orderStatus_date, NULL) AS orderStatus_date,
 
             c.cus_id,
             c.name AS name,
@@ -384,63 +390,189 @@ exports.getDeductionBilling = async (req, res) => {
             c.lan_number AS lan_number,
             c.mobile AS mobile,
             c.address AS address
-            
-        FROM billing_deduction bd
-        LEFT JOIN job j ON bd.job_id = j.job_id
+
+        FROM job j
         LEFT JOIN customers c ON j.cus_id = c.cus_id
-        WHERE bd.payment_status = 1
-        AND bd.bill_date BETWEEN ? AND ?
-        ORDER BY bd.bill_date ASC
+
+        WHERE j.order_status = 3
+        AND j.is_claimer = 0
+        AND j.frame_category = "Spectacles"
+        AND DATE(j.orderStatus_date) BETWEEN ? AND ?
+
+        ORDER BY j.orderStatus_date ASC
     `;
 
-    try {
-        db.query(sql, [fromDate, toDate], (err, rows) => {
-            if (err) {
-                console.error("Database error:", err);
-                return res.status(500).json({ message: "Database error" });
+    db.query(jobSQL, [fromDate, toDate], (err, jobRows) => {
+        if (err) {
+            console.error("Job query error:", err);
+            return res.status(500).json({ message: "Database error" });
+        }
+
+        const jobIds = jobRows.map(j => j.job_id);
+
+        // 2️⃣ Get all bills for those jobs (if any jobs exist)
+        const getBillingData = (callback) => {
+            if (!jobIds.length) {
+                return callback(null, []);
             }
 
-            const totalCount = rows.length;
+            const billingSQL = `
+                SELECT * 
+                FROM billing
+                WHERE job_id IN (?)
+            `;
 
-            if (!rows.length) {
-                return res.status(200).json({
-                    totalCount: 0,
-                    data: []
-                });
-            }
-
-            const finalData = rows.map(row => {
-                return {
-                    bill_id: row.bill_id,
-                    job_id: row.job_id,
-                    amount: row.amount,
-                    payment_method: row.payment_method,
-                    bill_type: row.bill_type,
-                    bill_date: row.bill_date,
-                    due_amount: row.due_amount,
-                    total_price: row.total_price,
-                    customer: {
-                        cus_id: row.cus_id,
-                        name: row.name,
-                        age: row.age,
-                        mobile: row.mobile,
-                        email: row.email,
-                        lan_number: row.lan_number,
-                        nic: row.nic,
-                        address: row.address
-                    }
-                };
+            db.query(billingSQL, [jobIds], (err, billingRows) => {
+                if (err) {
+                    console.error("Billing query error:", err);
+                    return res.status(500).json({ message: "Database error" });
+                }
+                callback(null, billingRows);
             });
+        };
 
-            return res.status(200).json({
-                totalCount,
-                data: finalData
+        // 3️⃣ Get deducted bills (if any jobs exist)
+        const getDeductionData = (callback) => {
+            if (!jobIds.length) {
+                return callback(null, []);
+            }
+
+            const deductionSQL = `
+                SELECT * 
+                FROM billing_deduction
+                WHERE job_id IN (?)
+            `;
+
+            db.query(deductionSQL, [jobIds], (err, deductionRows) => {
+                if (err) {
+                    console.error("Deduction query error:", err);
+                    return res.status(500).json({ message: "Database error" });
+                }
+                callback(null, deductionRows);
+            });
+        };
+
+        // 🔥 Execute billing query
+        getBillingData((err, billingRows) => {
+
+            // 🔥 Execute deduction query
+            getDeductionData((err, deductionRows) => {
+
+                // 4️⃣ Get total bill amount (always calculate)
+                const totalBillingSQL = `
+                    SELECT COALESCE(SUM(amount),0) AS totalBillAmount
+                    FROM billing
+                    WHERE DATE(bill_date) BETWEEN ? AND ?
+                `;
+
+                db.query(totalBillingSQL, [fromDate, toDate], (err, totalBillResult) => {
+                    if (err) {
+                        console.error("Total billing error:", err);
+                        return res.status(500).json({ message: "Database error" });
+                    }
+
+                    // 5️⃣ Get total expenses (always calculate)
+                    const totalExpenseSQL = `
+                        SELECT COALESCE(SUM(amount),0) AS totalExpenseAmount
+                        FROM daily_expenses
+                        WHERE DATE(date_time) BETWEEN ? AND ?
+                    `;
+
+                    db.query(totalExpenseSQL, [fromDate, toDate], (err, totalExpenseResult) => {
+                        if (err) {
+                            console.error("Expense query error:", err);
+                            return res.status(500).json({ message: "Database error" });
+                        }
+
+                        // 🔥 Combine everything safely
+
+                        const finalData = jobRows.length
+                            ? jobRows.map(job => ({
+                                job_id: job.job_id,
+                                netPrice: job.netPrice,
+                                frame_deduction: job.frame_deduction,
+                                orderStatus_date: job.orderStatus_date,
+
+                                customer: {
+                                    cus_id: job.cus_id,
+                                    name: job.name,
+                                    mobile: job.mobile
+                                },
+
+                                bills: billingRows.filter(b => b.job_id === job.job_id),
+
+                                deducted_bills: deductionRows.filter(d => d.job_id === job.job_id)
+                            }))
+                            : [];
+
+                        return res.status(200).json({
+                            totalJobs: jobRows.length,
+                            totalBillAmount: totalBillResult[0]?.totalBillAmount || 0,
+                            totalExpenseAmount: totalExpenseResult[0]?.totalExpenseAmount || 0,
+                            data: finalData
+                        });
+                    });
+                });
             });
         });
-
-    } catch (error) {
-        console.error("Server error:", error);
-        return res.status(500).json({ message: "Server error" });
-    }
+    });
 };
+
+exports.verifyBillDeduction = (req, res) => {
+    const { bill_ids } = req.body;
+
+    if (!bill_ids || !Array.isArray(bill_ids) || bill_ids.length === 0) {
+        return res.status(400).json({ message: "No bill IDs provided." });
+    }
+
+    // Get connection from pool
+    db.getConnection((err, connection) => {
+        if (err) {
+            console.error("Connection error:", err);
+            return res.status(500).json({ message: "Database connection failed." });
+        }
+
+        connection.beginTransaction((err) => {
+            if (err) {
+                connection.release();
+                console.error("Transaction error:", err);
+                return res.status(500).json({ message: "Failed to start transaction." });
+            }
+
+            const updateSQL = `
+                UPDATE billing
+                SET payment_status = 2
+                WHERE bill_id IN (?)
+            `;
+
+            connection.query(updateSQL, [bill_ids], (err, result) => {
+                if (err) {
+                    return connection.rollback(() => {
+                        connection.release();
+                        console.error("Update error:", err);
+                        res.status(500).json({ message: "Failed to update bills." });
+                    });
+                }
+
+                connection.commit((err) => {
+                    if (err) {
+                        return connection.rollback(() => {
+                            connection.release();
+                            console.error("Commit error:", err);
+                            res.status(500).json({ message: "Failed to commit transaction." });
+                        });
+                    }
+
+                    connection.release();
+                    return res.status(200).json({
+                        message: "Bills verified successfully.",
+                        affectedRows: result.affectedRows
+                    });
+                });
+            });
+        });
+    });
+};
+
+
 
