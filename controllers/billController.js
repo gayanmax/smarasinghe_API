@@ -496,7 +496,11 @@ exports.getDeductionBilling = (req, res) => {
                                 customer: {
                                     cus_id: job.cus_id,
                                     name: job.name,
-                                    mobile: job.mobile
+                                    mobile: job.mobile,
+                                    age: job.age,
+                                    address: job.address,
+                                    lan_number: job.lan_number,
+                                    nic: job.nic
                                 },
 
                                 bills: billingRows.filter(b => b.job_id === job.job_id),

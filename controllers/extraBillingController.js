@@ -38,12 +38,12 @@ exports.addExtraBilling = (req, res) => {
     `;
 
     const billValues = [
-        0,                      // job_id
-        total_amount,           // FULL GRAND TOTAL
+        0,
+        total_amount,
         payment_method,
         "Extra Payment",
-        1,                      // payment_status
-        0,                      // is_claimer_bill
+        1,
+        0,
         userId
     ];
 
@@ -59,34 +59,31 @@ exports.addExtraBilling = (req, res) => {
         const bill_id = billResult.insertId;
 
         // ==========================
-        // STEP 2: INSERT MULTIPLE ITEMS INTO extra_billing
+        // STEP 2: INSERT SINGLE ROW INTO extra_billing
         // ==========================
-
+        // We now store the entire 'items' array as a JSON string
         const extraSql = `
             INSERT INTO extra_billing
-            (bill_id, name, contact, address, item_name, amount, quantity, total, payment_by)
-            VALUES ?
+            (bill_id, name, contact, address, items, total, payment_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
 
-        // Build bulk insert array
-        const extraValues = items.map(item => [
+        const extraValues = [
             bill_id,
             name,
             contact,
             address,
-            item.item_name,
-            item.amount,
-            item.quantity || 1,
-            item.row_total,     // each row total
+            JSON.stringify(items), // Convert array to JSON string for the DB
+            total_amount,
             userId
-        ]);
+        ];
 
-        db.query(extraSql, [extraValues], (extraErr, extraResult) => {
+        db.query(extraSql, extraValues, (extraErr, extraResult) => {
             if (extraErr) {
                 console.error("Extra billing insert error:", extraErr);
                 return res.status(500).json({
                     success: false,
-                    message: "Failed to add extra billing items"
+                    message: "Failed to add extra billing record"
                 });
             }
 
@@ -94,7 +91,7 @@ exports.addExtraBilling = (req, res) => {
                 success: true,
                 message: "Extra billing added successfully",
                 bill_id: bill_id,
-                items_inserted: extraResult.affectedRows
+                record_id: extraResult.insertId
             });
         });
     });
@@ -108,6 +105,7 @@ exports.getAllExtraBilling = (req, res) => {
 
     const { fromDate, toDate } = req.query;
 
+    // Note: Ensure 'status' and 'date' columns exist in your extra_billing table
     let whereSql = `WHERE status = 1`;
     const params = [];
 
@@ -161,12 +159,34 @@ exports.getAllExtraBilling = (req, res) => {
                     });
                 }
 
+                // ==========================================
+                // ✅ KEY MODIFICATION: PARSE THE JSON STRING
+                // ==========================================
+                const formattedResults = results.map(row => {
+                    let parsedItems = [];
+                    try {
+                        // If it's already an object (driver-dependent), use it;
+                        // otherwise, parse the string.
+                        parsedItems = typeof row.items === 'string'
+                            ? JSON.parse(row.items)
+                            : row.items;
+                    } catch (e) {
+                        console.error("JSON parsing error for ID:", row.id, e);
+                        parsedItems = []; // Fallback to empty array on error
+                    }
+
+                    return {
+                        ...row,
+                        items: parsedItems
+                    };
+                });
+
                 res.status(200).json({
                     page,
                     limit,
                     total,
                     totalPages,
-                    extra_billing: results
+                    extra_billing: formattedResults
                 });
             }
         );
@@ -255,37 +275,58 @@ exports.getExtraBillingById = (req, res) => {
 
         const billData = billResults[0];
 
-        // ==========================
-        // STEP 2: Get all items for this bill from extra_billing
-        // ==========================
-        const itemsSql = `
+        // ==============================================
+        // STEP 2: Get the single record from extra_billing
+        // ==============================================
+        const extraSql = `
             SELECT 
                 id,
-                item_name,
-                amount,
-                quantity,
-                total,
+                items,    -- This is your new JSON column
                 name,
                 contact,
-                address
+                address,
+                total
             FROM extra_billing
             WHERE bill_id = ? 
+            LIMIT 1
         `;
 
-        db.query(itemsSql, [billId], (itemsErr, itemsResults) => {
-            if (itemsErr) {
-                console.error("DB Error (getExtraBillingById - items):", itemsErr);
+        db.query(extraSql, [billId], (extraErr, extraResults) => {
+            if (extraErr) {
+                console.error("DB Error (getExtraBillingById - extra):", extraErr);
                 return res.status(500).json({
                     success: false,
-                    message: "Database error fetching items"
+                    message: "Database error fetching extra details"
                 });
+            }
+
+            // Fallback if the extra_billing record doesn't exist for some reason
+            const extraData = extraResults[0] || {};
+
+            // ✅ Parse the items JSON string back into an array
+            let parsedItems = [];
+            try {
+                if (extraData.items) {
+                    parsedItems = typeof extraData.items === 'string'
+                        ? JSON.parse(extraData.items)
+                        : extraData.items;
+                }
+            } catch (e) {
+                console.error("JSON parse error for items:", e);
+                parsedItems = [];
             }
 
             return res.status(200).json({
                 success: true,
                 data: {
                     bill: billData,
-                    items: itemsResults || []
+                    customer: {
+                        name: extraData.name,
+                        contact: extraData.contact,
+                        address: extraData.address,
+                        total_from_extra: extraData.total
+                    },
+                    items: parsedItems // Frontend gets the same array format as before!
                 }
             });
         });
