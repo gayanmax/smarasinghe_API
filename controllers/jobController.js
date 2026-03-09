@@ -704,7 +704,6 @@ exports.getJobDetails = (req, res) => {
     });
 };
 
-
 // ✅ Update job with logging
 exports.updateJob = (req, res) => {
     const { job_id } = req.params;

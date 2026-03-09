@@ -1,187 +1,178 @@
 // controller/reportController.js
 
 const db = require('../db');
+const util = require('util');
+const query = util.promisify(db.query).bind(db);
 
-// ---------------------- Helper: date format ----------------------
+// Helper: Format date to YYYY-MM-DD using LOCAL time to avoid timezone shifts
 function formatDate(d) {
-    return d.toISOString().split("T")[0];
+    const date = new Date(d);
+    return date.toLocaleDateString('en-CA');
 }
 
-// ---------------------- Helper: run query wrapper ----------------------
-function runQuery(sql, params, cb) {
-    db.query(sql, params, (err, rows) => {
-        if (err) return cb(err);
-        cb(null, rows);
-    });
-}
-
-// ---------------------- MAIN FUNCTION ----------------------
-exports.getReportData = (req, res) => {
+exports.getReportData = async (req, res) => {
     const { method, month_range, year } = req.body;
 
-    if (!method) {
-        return res.status(400).json({ message: "Method is required" });
-    }
+    if (!method) return res.status(400).json({ message: "Method is required" });
 
-    // ----------- DAILY -----------
-    if (method === "daily") {
-        const selectedDate = req.body.date
-            ? formatDate(new Date(req.body.date))
-            : formatDate(new Date());
+    try {
+        // ----------- DAILY -----------
+        if (method === "daily") {
+            const selectedDate = req.body.date ? formatDate(req.body.date) : formatDate(new Date());
 
-        const result = {
-            date: selectedDate,
-            payment_totals: { cash: 0, visa: 0, online: 0, bank: 0 }
-        };
+            // 1. Fetch Combined Bills for the list and payment totals
+            const bills = await query(`
+                SELECT combined.*, users.user_name AS billed_by
+                FROM (
+                    SELECT payment_method, amount, bill_date, billed_by FROM billing 
+                    WHERE is_claimer_bill = 0 AND DATE(bill_date) = ?
+                    UNION ALL
+                    SELECT payment_method, amount, bill_date, billed_by FROM temp_billing 
+                    WHERE DATE(bill_date) = ?
+                ) AS combined
+                LEFT JOIN users ON users.user_id = combined.billed_by
+            `, [selectedDate, selectedDate]);
 
-        const billsSQL = `
-            SELECT SQL_CALC_FOUND_ROWS billing.*, users.user_name AS billed_by
-            FROM billing
-            LEFT JOIN users ON users.user_id = billing.billed_by
-            WHERE DATE(bill_date) = ? AND billing.bill_type != 'claim'
-        `;
+            // 2. Fetch Expenses, Jobs, and Customers
+            const expenses = await query(`
+                SELECT d.*, u.user_name AS expenses_by 
+                FROM daily_expenses d 
+                LEFT JOIN users u ON d.expenses_by = u.user_id 
+                WHERE DATE(date_time) = ?
+            `, [selectedDate]);
 
-        runQuery(billsSQL, [selectedDate], (err, bills) => {
-            if (err) return res.status(500).json({ message: "DB error bills" });
+            const jobCount = await query(`SELECT COUNT(*) AS count FROM job WHERE DATE(create_date) = ?`, [selectedDate]);
+            const custCount = await query(`SELECT COUNT(*) AS count FROM customers WHERE DATE(create_date) = ?`, [selectedDate]);
 
-            result.bills = bills;
-            result.bill_count = bills.length;
-            result.billing_total = 0;
+            // Calculate daily totals
+            const payment_totals = { cash: 0, visa: 0, online: 0, bank: 0 };
+            let billing_total = 0;
 
-            // Calculate totals and payment breakdowns in one pass
             bills.forEach(bill => {
                 const amt = parseFloat(bill.amount || 0);
-                result.billing_total += amt;
-
-                if (bill.payment_method === "Cash") result.payment_totals.cash += amt;
-                else if (bill.payment_method === "Visa Card") result.payment_totals.visa += amt;
-                else if (bill.payment_method === "Online Payment") result.payment_totals.online += amt;
-                else if (bill.payment_method === "Bank Payment") result.payment_totals.bank += amt;
+                billing_total += amt;
+                if (bill.payment_method === "Cash") payment_totals.cash += amt;
+                else if (bill.payment_method === "Visa Card") payment_totals.visa += amt;
+                else if (bill.payment_method === "Online Payment") payment_totals.online += amt;
+                else if (bill.payment_method === "Bank Payment") payment_totals.bank += amt;
             });
 
-            // --- Fetch Expenses, Jobs, and Customers (rest of the daily logic) ---
-            const expSQL = `SELECT d.*, u.user_name AS expenses_by FROM daily_expenses d LEFT JOIN users u ON d.expenses_by = u.user_id WHERE DATE(date_time) = ?`;
-            runQuery(expSQL, [selectedDate], (err2, expenses) => {
-                result.expenses = expenses;
-                result.expenses_total = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
-
-                const jobSQL = `SELECT COUNT(*) AS count FROM job WHERE DATE(create_date) = ?`;
-                runQuery(jobSQL, [selectedDate], (err3, j) => {
-                    result.jobs_created_today = j[0].count;
-                    const custSQL = `SELECT COUNT(*) AS count FROM customers WHERE DATE(create_date) = ?`;
-                    runQuery(custSQL, [selectedDate], (err4, c) => {
-                        result.customers_created_today = c[0].count;
-                        return res.status(200).json(result);
-                    });
-                });
+            return res.status(200).json({
+                date: selectedDate,
+                bills,
+                bill_count: bills.length,
+                billing_total,
+                payment_totals,
+                expenses,
+                expenses_total: expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0),
+                jobs_created_today: jobCount[0].count,
+                customers_created_today: custCount[0].count
             });
-        });
-        return;
-    }
-
-    // ----------- WEEKLY & MONTHLY (Shared Logic) -----------
-    if (method === "weekly" || method === "monthly") {
-        let startDate, endDate;
-
-        if (method === "weekly") {
-            const today = new Date();
-            const start = new Date(today);
-            start.setDate(today.getDate() - 6);
-            startDate = formatDate(start);
-            endDate = formatDate(today);
-        } else {
-            const parts = (month_range || "").split("|");
-            if (parts.length !== 2) return res.status(400).json({ message: "Invalid month_range" });
-            [startDate, endDate] = parts;
         }
 
-        const result = {
-            range: { start: startDate, end: endDate },
-            payment_totals: { cash: 0, visa: 0, online: 0, bank: 0 }
-        };
+        // ----------- WEEKLY & MONTHLY -----------
+        if (method === "weekly" || method === "monthly") {
+            let startDate, endDate;
 
-        // SQL updated with conditional sums
-        const billSQL = `
-            SELECT 
-                DATE(bill_date) AS day, 
-                SUM(amount) AS total,
-                SUM(CASE WHEN payment_method = 'Cash' THEN amount ELSE 0 END) AS cash_total,
-                SUM(CASE WHEN payment_method = 'Visa Card' THEN amount ELSE 0 END) AS visa_total,
-                SUM(CASE WHEN payment_method = 'Online Payment' THEN amount ELSE 0 END) AS online_total,
-                SUM(CASE WHEN payment_method = 'Bank Payment' THEN amount ELSE 0 END) AS bank_total
-            FROM billing
-            WHERE bill_type <> 'claim' AND DATE(bill_date) BETWEEN ? AND ?
-            GROUP BY DATE(bill_date)
-        `;
+            if (method === "weekly") {
+                const today = new Date();
+                const start = new Date();
+                start.setDate(today.getDate() - 6);
+                startDate = formatDate(start);
+                endDate = formatDate(today);
+            } else {
+                const parts = (month_range || "").split("|");
+                if (parts.length !== 2) return res.status(400).json({ message: "Invalid month_range" });
+                [startDate, endDate] = parts;
+            }
 
-        runQuery(billSQL, [startDate, endDate], (err, billRows) => {
-            if (err) return res.status(500).json({ message: "DB error bills" });
+            // 1. Combined Bill Data Grouped by Day
+            const billRows = await query(`
+                SELECT 
+                    DATE(bill_date) AS day, 
+                    SUM(amount) AS total,
+                    SUM(CASE WHEN payment_method = 'Cash' THEN amount ELSE 0 END) AS cash_total,
+                    SUM(CASE WHEN payment_method = 'Visa Card' THEN amount ELSE 0 END) AS visa_total,
+                    SUM(CASE WHEN payment_method = 'Online Payment' THEN amount ELSE 0 END) AS online_total,
+                    SUM(CASE WHEN payment_method = 'Bank Payment' THEN amount ELSE 0 END) AS bank_total
+                FROM (
+                    SELECT bill_date, amount, payment_method FROM billing 
+                    WHERE is_claimer_bill = 0 AND DATE(bill_date) BETWEEN ? AND ?
+                    UNION ALL
+                    SELECT bill_date, amount, payment_method FROM temp_billing 
+                    WHERE DATE(bill_date) BETWEEN ? AND ?
+                ) AS combined_range
+                GROUP BY DATE(bill_date)
+            `, [startDate, endDate, startDate, endDate]);
 
-            result.billing_total = 0;
-            billRows.forEach(r => {
-                result.billing_total += r.total || 0;
-                result.payment_totals.cash += r.cash_total || 0;
-                result.payment_totals.visa += r.visa_total || 0;
-                result.payment_totals.online += r.online_total || 0;
-                result.payment_totals.bank += r.bank_total || 0;
+            // 2. Expenses and other counts
+            const expRows = await query(`
+                SELECT DATE(date_time) AS day, SUM(amount) AS total 
+                FROM daily_expenses 
+                WHERE DATE(date_time) BETWEEN ? AND ? 
+                GROUP BY DATE(date_time)
+            `, [startDate, endDate]);
+
+            const totals = billRows.reduce((acc, r) => {
+                acc.billing_total += parseFloat(r.total);
+                acc.payment_totals.cash += parseFloat(r.cash_total);
+                acc.payment_totals.visa += parseFloat(r.visa_total);
+                acc.payment_totals.online += parseFloat(r.online_total);
+                acc.payment_totals.bank += parseFloat(r.bank_total);
+                return acc;
+            }, { billing_total: 0, payment_totals: { cash: 0, visa: 0, online: 0, bank: 0 } });
+
+            return res.status(200).json({
+                range: { start: startDate, end: endDate },
+                bills: billRows,
+                ...totals,
+                expenses: expRows,
+                expenses_total: expRows.reduce((s, r) => s + parseFloat(r.total || 0), 0)
             });
-            result.bills = billRows;
+        }
 
-            // Fetch Expenses, Customers, Jobs (Simplified for brevity)
-            const expSQL = `SELECT DATE(date_time) AS day, SUM(amount) AS total FROM daily_expenses WHERE DATE(date_time) BETWEEN ? AND ? GROUP BY DATE(date_time)`;
-            runQuery(expSQL, [startDate, endDate], (err2, expRows) => {
-                result.expenses = expRows;
-                result.expenses_total = expRows.reduce((s, r) => s + (r.total || 0), 0);
+        // ----------- ANNUALLY -----------
+        if (method === "annually") {
+            if (!year) return res.status(400).json({ message: "Year required" });
 
-                // Add remaining customer/job queries here as per your original structure...
-                return res.status(200).json(result);
+            const billRows = await query(`
+                SELECT 
+                    MONTH(bill_date) AS month, 
+                    SUM(amount) AS total,
+                    SUM(CASE WHEN payment_method = 'Cash' THEN amount ELSE 0 END) AS cash_total,
+                    SUM(CASE WHEN payment_method = 'Visa Card' THEN amount ELSE 0 END) AS visa_total,
+                    SUM(CASE WHEN payment_method = 'Online Payment' THEN amount ELSE 0 END) AS online_total,
+                    SUM(CASE WHEN payment_method = 'Bank Payment' THEN amount ELSE 0 END) AS bank_total
+                FROM (
+                    SELECT bill_date, amount, payment_method FROM billing 
+                    WHERE is_claimer_bill = 0 AND YEAR(bill_date) = ?
+                    UNION ALL
+                    SELECT bill_date, amount, payment_method FROM temp_billing 
+                    WHERE YEAR(bill_date) = ?
+                ) AS combined_year
+                GROUP BY MONTH(bill_date)
+            `, [year, year]);
+
+            const totals = billRows.reduce((acc, r) => {
+                acc.billing_total += parseFloat(r.total);
+                acc.payment_totals.cash += parseFloat(r.cash_total);
+                acc.payment_totals.visa += parseFloat(r.visa_total);
+                acc.payment_totals.online += parseFloat(r.online_total);
+                acc.payment_totals.bank += parseFloat(r.bank_total);
+                return acc;
+            }, { billing_total: 0, payment_totals: { cash: 0, visa: 0, online: 0, bank: 0 } });
+
+            return res.status(200).json({
+                year,
+                bills: billRows,
+                ...totals
             });
-        });
-        return;
+        }
+
+    } catch (err) {
+        console.error("Report Error:", err);
+        return res.status(500).json({ message: "Internal server error", error: err.message });
     }
-
-    // ----------- ANNUALLY -----------
-    if (method === "annually") {
-        if (!year) return res.status(400).json({ message: "Year required" });
-
-        const result = {
-            year,
-            payment_totals: { cash: 0, visa: 0, online: 0, bank: 0 }
-        };
-
-        const billSQL = `
-            SELECT 
-                MONTH(bill_date) AS month, 
-                SUM(amount) AS total,
-                SUM(CASE WHEN payment_method = 'Cash' THEN amount ELSE 0 END) AS cash_total,
-                SUM(CASE WHEN payment_method = 'Visa Card' THEN amount ELSE 0 END) AS visa_total,
-                SUM(CASE WHEN payment_method = 'Online Payment' THEN amount ELSE 0 END) AS online_total,
-                SUM(CASE WHEN payment_method = 'Bank Payment' THEN amount ELSE 0 END) AS bank_total
-            FROM billing
-            WHERE YEAR(bill_date) = ? AND bill_type <> 'claim'
-            GROUP BY MONTH(bill_date)
-        `;
-
-        runQuery(billSQL, [year], (err, billRows) => {
-            if (err) return res.status(500).json({ message: "DB error bills" });
-
-            result.billing_total = 0;
-            billRows.forEach(r => {
-                result.billing_total += r.total || 0;
-                result.payment_totals.cash += r.cash_total || 0;
-                result.payment_totals.visa += r.visa_total || 0;
-                result.payment_totals.online += r.online_total || 0;
-                result.payment_totals.bank += r.bank_total || 0;
-            });
-            result.bills = billRows;
-
-            // Remaining annual logic for expenses, jobs, etc...
-            return res.status(200).json(result);
-        });
-        return;
-    }
-
-    return res.status(400).json({ message: "Invalid method" });
 };
 
 exports.createReportLog = (req, res) => {
