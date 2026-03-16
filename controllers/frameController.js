@@ -200,7 +200,7 @@ exports.deleteFramePart = (req, res) => {
         });
     }
 
-    const sql = `DELETE FROM ${table_name} WHERE id = ?`;
+    const sql = `UPDATE ${table_name} SET status = 0 WHERE id = ?`;
 
     db.query(sql, [id], (err, result) => {
         if (err) {
@@ -225,6 +225,25 @@ exports.deleteFramePart = (req, res) => {
         });
     });
 };
+
+exports.deleteFrameModel = (req, res) => {
+    const {id} = req.body;
+    if (!id) {
+        return res.status(400).json({ message: "ID is required" });
+    }
+
+    const sql = `DELETE FROM frame_model WHERE id = ?`;
+
+    db.query(sql, [id], (err, result) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).json({success: false, message: 'Database error'});
+        }
+
+        res.status(200).json({success: true, message: 'Frame model deleted'});
+    });
+
+}
 
 // update each frame part table status
 exports.updateStatus = (req, res) => {
@@ -314,6 +333,7 @@ exports.insertData = (req, res) => {
     const checkSql = `
         SELECT id FROM ${table_name}
         WHERE LOWER(name) = LOWER(?)
+        AND status = 1
         LIMIT 1
     `;
 

@@ -102,6 +102,7 @@ exports.insertData = (req, res) => {
     const checkSql = `
         SELECT id FROM ${table_name}
         WHERE LOWER(name) = LOWER(?)
+        AND status = 1
         LIMIT 1
     `;
 
@@ -159,7 +160,8 @@ exports.getLensNames = async (req, res) => {
 
         for (const table of tables) {
             const [rows] = await db.promise().query(
-                `SELECT * FROM ??`,
+                `SELECT * FROM ??
+                 WHERE status = 1`,
                 [table]
             );
 
@@ -281,7 +283,8 @@ exports.deleteLensPart = (req, res) => {
         });
     }
 
-    const sql = `DELETE FROM ${table_name} WHERE id = ?`;
+    // ✅ Instead of DELETE, update status to 0
+    const sql = `UPDATE ${table_name} SET status = 0 WHERE id = ?`;
 
     db.query(sql, [id], (err, result) => {
         if (err) {
@@ -292,7 +295,7 @@ exports.deleteLensPart = (req, res) => {
             });
         }
 
-        // Optional: check if row actually existed
+        // Check if row exists
         if (result.affectedRows === 0) {
             return res.status(404).json({
                 success: false,
@@ -302,7 +305,8 @@ exports.deleteLensPart = (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: 'Record deleted permanently'
+            message: 'Record deactivated successfully'
         });
     });
 };
+

@@ -76,6 +76,7 @@ router.delete("/remove-frame/:id", authMiddleware, frameController.deleteFrameBy
 router.put("/edit-frame-update", authMiddleware, frameController.updateFrameDetails);
 router.post('/create-frame-model', authMiddleware, frameController.createFrameModel);
 router.delete('/delete-frame-parts', authMiddleware, frameController.deleteFramePart);
+router.delete('/delete-frame-model', authMiddleware, frameController.deleteFrameModel);
 
 // prescribedBy APIs
 router.post("/create-prescribed", authMiddleware, prescribedByController.createPrescribedBy);

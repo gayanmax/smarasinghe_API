@@ -35,6 +35,7 @@ exports.getAllPrescribedBy = (req, res) => {
             status,
             create_date
         FROM prescribedby
+        WHERE status = 1
         ORDER BY prescribed_By_Id DESC
     `;
 
@@ -88,7 +89,7 @@ exports.deletePrescribedBy = (req, res) => {
         return res.status(400).json({ message: "ID is required" });
     }
 
-    const sql = `DELETE FROM prescribedby WHERE prescribed_By_Id = ?`;
+    const sql = `UPDATE FROM prescribedby SET status=0 WHERE prescribed_By_Id = ?`;
 
     db.query(sql, [id], (err, result) => {
         if (err) {

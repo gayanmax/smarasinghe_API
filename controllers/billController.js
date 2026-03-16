@@ -379,6 +379,7 @@ exports.getDeductionBilling = (req, res) => {
             j.job_id,
             j.cus_id,
             COALESCE(j.netPrice, 0) AS netPrice,
+            COALESCE(j.discount, 0) AS discount,
             COALESCE(j.frame_deduction, 0) AS frame_deduction,
             COALESCE(j.orderStatus_date, NULL) AS orderStatus_date,
 
@@ -490,6 +491,7 @@ exports.getDeductionBilling = (req, res) => {
                             ? jobRows.map(job => ({
                                 job_id: job.job_id,
                                 netPrice: job.netPrice,
+                                discount: job.discount,
                                 frame_deduction: job.frame_deduction,
                                 orderStatus_date: job.orderStatus_date,
 
